@@ -26,7 +26,6 @@ contract OptionPoolMock is Ownable {
     event LogOptionCreation(
         uint256 indexed id,
         address indexed pool,
-        uint256 notional,
         uint256 amountOut,
         uint256 amountIn
     );
@@ -95,7 +94,6 @@ contract OptionPoolMock is Ownable {
         emit LogOptionCreation(
             optionsByUser[msg.sender].length - 1,
             address(this),
-            notional_,
             amountOut,
             notional_
         );
@@ -114,6 +112,9 @@ contract OptionPoolMock is Ownable {
             msg.sender,
             optionsByUser[msg.sender][id_].amountOut
         );
+
+        debt += optionsByUser[msg.sender][id_].amountOut;
+        debtRatio = _wdiv(debt, IERC20(base).balanceOf(address(this)));
 
         emit LogExercise(address(this), msg.sender, id_);
     }
