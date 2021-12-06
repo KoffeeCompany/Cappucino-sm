@@ -10,4 +10,5 @@ struct Option {
     uint256 notional;
     address receiver;
     uint256 price;
+    uint256 startTime;
 }

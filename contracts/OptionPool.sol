@@ -47,6 +47,16 @@ contract OptionPool is Ownable, Initializable {
 
     //#region Events
 
+    event OptionPool(
+        address indexed pool,
+        address short,
+        address base,
+        uint256 expiryTime,
+        uint256 strike,
+        uint256 timeBeforeDeadLine,
+        uint256 bcv
+    );
+
     event CreateOption(
         address indexed pool,
         uint256 indexed id,
@@ -83,6 +93,16 @@ contract OptionPool is Ownable, Initializable {
         strike = strike_;
         timeBeforeDeadLine = timeBeforeDeadLine_;
         bcv = bcv_;
+
+        emit OptionPool(
+            address(this),
+            address(short_),
+            address(base_),
+            expiryTime_,
+            strike_,
+            timeBeforeDeadLine_,
+            bcv_
+        );
     }
 
     //#region ONLY ADMIN
@@ -118,7 +138,8 @@ contract OptionPool is Ownable, Initializable {
         Option memory option = Option({
             notional: notional_,
             receiver: receiver_,
-            price: getPrice()
+            price: getPrice(),
+            startTime: block.timestamp
         });
 
         options.opts[options.nextID] = option;
@@ -155,6 +176,17 @@ contract OptionPool is Ownable, Initializable {
         Options storage options = optionsByReceiver[msg.sender];
 
         Option memory option = options.opts[id_];
+
+        require(
+            option.startTime + expiryTime < block.timestamp,
+            "OptionPool::exercise: not expired."
+        );
+
+        require(
+            option.startTime + expiryTime + timeBeforeDeadLine >
+                block.timestamp,
+            "OptionPool::exercise: deadline reached."
+        );
 
         debt -= option.notional;
         debtRatio = _wdiv(debt, base.balanceOf(pool) - option.notional);
