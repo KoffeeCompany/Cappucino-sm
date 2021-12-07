@@ -26,11 +26,12 @@ contract OptionPoolMock is Ownable {
     event LogOptionCreation(
         uint256 indexed id,
         address indexed pool,
+        address user,
         uint256 amountOut,
         uint256 amountIn
     );
 
-    event LogExercise(address indexed pool, address indexed user, uint256 id);
+    event LogExercise(address indexed pool, address user, uint256 id);
 
     // !!!!!!!!!!!!! EVENTS !!!!!!!!!!!!!
 
@@ -94,6 +95,7 @@ contract OptionPoolMock is Ownable {
         emit LogOptionCreation(
             optionsByUser[msg.sender].length - 1,
             address(this),
+            msg.sender,
             amountOut,
             notional_
         );

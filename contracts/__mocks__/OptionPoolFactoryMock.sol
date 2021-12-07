@@ -8,6 +8,7 @@ contract OptionPoolFactoryMock {
     // !!!!!!!!!!!! EVENTS !!!!!!!!!!!!!!!!
 
     event LogOptionPoolCreation(
+        bytes32 hash,
         address pool,
         address base,
         address short,
@@ -56,5 +57,17 @@ contract OptionPoolFactoryMock {
         optionPools[hash] = address(optionPool);
 
         optionPool.transferOwnership(msg.sender);
+
+        emit LogOptionPoolCreation(
+            hash,
+            address(optionPool),
+            base_,
+            short_,
+            optionType_,
+            liquidity_,
+            bcv_,
+            strike_,
+            maturity_
+        );
     }
 }

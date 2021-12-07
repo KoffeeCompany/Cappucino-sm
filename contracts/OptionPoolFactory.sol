@@ -5,16 +5,18 @@ import {
     IERC20,
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {OptionPool} from "./OptionPool.sol";
 
 contract OptionPoolFactory {
+    using SafeERC20 for IERC20;
 
-using SafeERC20 for IERC20;
+    IPokeMe public immutable pokeMe;
 
     mapping(bytes32 => address) public getCallOptions;
     address[] public allOptions;
 
-    event OptionCreated(
+    event OptionPoolCreated(
         IERC20 indexed short,
         IERC20 indexed base,
         uint256 expiryTime,
@@ -23,6 +25,10 @@ using SafeERC20 for IERC20;
         uint256 bcv,
         uint256 initialTotalSupply
     );
+
+    constructor(IPokeMe pokeMe_) {
+        pokeMe = pokeMe_;
+    }
 
     function createCallOption(
         IERC20 short_,
@@ -71,7 +77,7 @@ using SafeERC20 for IERC20;
 
         base_.safeTransferFrom(msg.sender, address(this), initialTotalSupply_);
         base_.safeTransfer(option, initialTotalSupply_);
-        emit OptionCreated(
+        emit OptionPoolCreated(
             short_,
             base_,
             expiryTime_,

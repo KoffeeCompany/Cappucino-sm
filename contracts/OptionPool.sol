@@ -11,6 +11,8 @@ import {
 } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {_wmul, _wdiv} from "./vendor/DSMath.sol";
 import {Options, Option} from "./structs/SOption.sol";
+import {IPokeMe} from "./interfaces/IPokeMe.sol";
+import {IOptionPoolFactory} from "./interfaces/IOptionPoolFactory.sol";
 
 contract OptionPool is Ownable, Initializable {
     using SafeERC20 for IERC20;
@@ -30,6 +32,8 @@ contract OptionPool is Ownable, Initializable {
 
     mapping(address => Options) public optionsByReceiver;
 
+    IOptionPoolFactory public optionPoolFactory;
+
     //#region MODIFIERS
 
     modifier deadLineBeforeExpiry(
@@ -47,7 +51,7 @@ contract OptionPool is Ownable, Initializable {
 
     //#region Events
 
-    event OptionPool(
+    event LogOptionPool(
         address indexed pool,
         address short,
         address base,
@@ -57,7 +61,7 @@ contract OptionPool is Ownable, Initializable {
         uint256 bcv
     );
 
-    event CreateOption(
+    event LogCreateOption(
         address indexed pool,
         uint256 indexed id,
         address short,
@@ -67,13 +71,21 @@ contract OptionPool is Ownable, Initializable {
         uint256 price
     );
 
-    event ExerciseOption(
+    event LogExerciseOption(
         address indexed pool,
         uint256 indexed id,
         uint256 amountIn
     );
 
     //#endregion Events
+
+    // !!!!!!!!!!!!! CONSTRUCTOR !!!!!!!!!!!!!!!!
+
+    constructor() Ownable() {
+        optionPoolFactory = IOptionPoolFactory(msg.sender);
+    }
+
+    // !!!!!!!!!!!!! CONSTRUCTOR !!!!!!!!!!!!!!!!
 
     function initialize(
         IERC20 short_,
@@ -94,7 +106,7 @@ contract OptionPool is Ownable, Initializable {
         timeBeforeDeadLine = timeBeforeDeadLine_;
         bcv = bcv_;
 
-        emit OptionPool(
+        emit LogOptionPool(
             address(this),
             address(short_),
             address(base_),
@@ -160,7 +172,7 @@ contract OptionPool is Ownable, Initializable {
 
         assert(balanceB + amountIn == short.balanceOf(pool));
 
-        emit CreateOption(
+        emit LogCreateOption(
             pool,
             options.nextID,
             address(short),
@@ -200,7 +212,7 @@ contract OptionPool is Ownable, Initializable {
 
         assert(balanceB + amountIn == short.balanceOf(pool));
 
-        emit ExerciseOption(pool, id_, amountIn);
+        emit LogExerciseOption(pool, id_, amountIn);
     }
 
     //#endregion USER FUNCTIONS CREATE EXERCISE
