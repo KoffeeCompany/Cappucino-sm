@@ -3,8 +3,13 @@ pragma solidity 0.8.7;
 
 import {CALL, PUT} from "../constants/COption.sol";
 import {OptionPoolMock} from "./OptionPoolMock.sol";
+import {
+    IERC20,
+    SafeERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract OptionPoolFactoryMock {
+    using SafeERC20 for IERC20;
     // !!!!!!!!!!!! EVENTS !!!!!!!!!!!!!!!!
 
     event LogOptionPoolCreation(
@@ -53,6 +58,9 @@ contract OptionPoolFactoryMock {
                 maturity_
             )
         );
+
+        IERC20(base_).safeTransferFrom(msg.sender, address(this), liquidity_);
+        IERC20(base_).safeTransfer(address(optionPool), liquidity_);
 
         optionPools[hash] = address(optionPool);
 

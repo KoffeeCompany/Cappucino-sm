@@ -11,8 +11,10 @@ import {
 } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {_wmul, _wdiv} from "./vendor/DSMath.sol";
 import {Options, Option} from "./structs/SOption.sol";
+import {OptionCanSettle} from "./structs/SOptionResolver.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IOptionPoolFactory} from "./interfaces/IOptionPoolFactory.sol";
+import {IPokeMeResolver} from "./IPokeMeResolver.sol";
 
 contract OptionPool is Ownable, Initializable {
     using SafeERC20 for IERC20;
@@ -26,6 +28,8 @@ contract OptionPool is Ownable, Initializable {
 
     uint256 public timeBeforeDeadLine;
     uint256 public bcv; // 18 decimal number
+    IPokeMe public pokeMe;
+    IPokeMeResolver public pokeMeResolver;
 
     uint256 public debt; // Increase during creation / Decrease during exercise
     uint256 public debtRatio; //  Call Option Debt Outstanding / Total Supply
@@ -43,6 +47,14 @@ contract OptionPool is Ownable, Initializable {
         require(
             expiryTime_ > timeBeforeDeadLine_,
             "OptionPool::initialize: timeBeforeDeadLine > expiryTime"
+        );
+        _;
+    }
+
+    modifier onlyPokeMe() {
+        require(
+            msg.sender == address(pokeMe),
+            "OptionPool::onlyPokeMe: only pokeMe"
         );
         _;
     }
@@ -67,14 +79,20 @@ contract OptionPool is Ownable, Initializable {
         address short,
         address base,
         uint256 notional,
-        uint256 amountIn,
-        uint256 price
+        uint256 amountOut,
+        uint256 premium
     );
 
     event LogExerciseOption(
         address indexed pool,
         uint256 indexed id,
         uint256 amountIn
+    );
+
+    event LogSettle(
+        address indexed pool,
+        uint256 indexed id,
+        address receiver
     );
 
     //#endregion Events
@@ -93,7 +111,9 @@ contract OptionPool is Ownable, Initializable {
         uint256 expiryTime_,
         uint256 strike_,
         uint256 timeBeforeDeadLine_,
-        uint256 bcv_
+        uint256 bcv_,
+        IPokeMe pokeMe_,
+        IPokeMeResolver pokeMeResolver_
     )
         public
         initializer
@@ -105,6 +125,8 @@ contract OptionPool is Ownable, Initializable {
         strike = strike_;
         timeBeforeDeadLine = timeBeforeDeadLine_;
         bcv = bcv_;
+        pokeMe = pokeMe_;
+        pokeMeResolver = pokeMeResolver_;
 
         emit LogOptionPool(
             address(this),
@@ -131,14 +153,14 @@ contract OptionPool is Ownable, Initializable {
         bcv = bcv_;
     }
 
-    function increaseTotalSupply(uint256 addend_) external onlyOwner {
+    function increaseSupply(uint256 addend_) external onlyOwner {
         base.safeTransferFrom(msg.sender, address(this), addend_);
     }
 
     //#endregion ONLY ADMIN
 
-    function getPrice() public view returns (uint256) {
-        return _wmul(bcv, debtRatio);
+    function getPrice(uint256 amount_) public view returns (uint256) {
+        return _wmul(_wmul(bcv, debtRatio), amount_);
     }
 
     //#region USER FUNCTIONS CREATE EXERCISE
@@ -150,12 +172,27 @@ contract OptionPool is Ownable, Initializable {
         Option memory option = Option({
             notional: notional_,
             receiver: receiver_,
-            price: getPrice(),
-            startTime: block.timestamp
+            price: getPrice(notional_),
+            startTime: block.timestamp,
+            pokeMe: pokeMe.createTaskNoPrepayment(
+                address(this),
+                this.settle.selector,
+                address(pokeMeResolver),
+                abi.encodeWithSelector(
+                    IPokeMeResolver.checker.selector,
+                    OptionCanSettle({
+                        pool: address(this),
+                        receiver: receiver_,
+                        id: options.opts.length
+                    })
+                ),
+                address(short)
+            ),
+            settled: false
         });
 
-        options.opts[options.nextID] = option;
-        options.nextID++;
+        options.opts.push(option);
+        options.nextID = options.opts.length;
 
         uint256 baseBalance = base.balanceOf(pool);
 
@@ -166,11 +203,9 @@ contract OptionPool is Ownable, Initializable {
 
         uint256 balanceB = short.balanceOf(pool);
 
-        uint256 amountIn = _wmul(notional_, option.price);
+        short.safeTransferFrom(msg.sender, pool, option.price);
 
-        short.safeTransferFrom(msg.sender, pool, amountIn);
-
-        assert(balanceB + amountIn == short.balanceOf(pool));
+        assert(balanceB + option.price == short.balanceOf(pool));
 
         emit LogCreateOption(
             pool,
@@ -178,7 +213,7 @@ contract OptionPool is Ownable, Initializable {
             address(short),
             address(base),
             notional_,
-            amountIn,
+            _wmul(strike, notional_),
             option.price
         );
     }
@@ -187,7 +222,10 @@ contract OptionPool is Ownable, Initializable {
         address pool = address(this);
         Options storage options = optionsByReceiver[msg.sender];
 
-        Option memory option = options.opts[id_];
+        Option storage option = options.opts[id_];
+
+        require(!option.settled, "OptionPool::exercise: already settled.");
+        option.settled = true;
 
         require(
             option.startTime + expiryTime < block.timestamp,
@@ -202,6 +240,7 @@ contract OptionPool is Ownable, Initializable {
 
         debt -= option.notional;
         debtRatio = _wdiv(debt, base.balanceOf(pool) - option.notional);
+        pokeMe.cancelTask(option.pokeMe);
 
         uint256 balanceB = short.balanceOf(pool);
 
@@ -215,5 +254,34 @@ contract OptionPool is Ownable, Initializable {
         emit LogExerciseOption(pool, id_, amountIn);
     }
 
+    function settle(address receiver_, uint256 id_) public onlyPokeMe {
+        Options storage options = optionsByReceiver[receiver_];
+
+        Option storage option = options.opts[id_];
+
+        require(!option.settled, "OptionPool::exercise: already settled.");
+
+        option.settled = true;
+        pokeMe.cancelTask(option.pokeMe);
+
+        emit LogSettle(address(this), id_, receiver_);
+    }
+
     //#endregion USER FUNCTIONS CREATE EXERCISE
+
+    //#region VIEW FUNCTIONS
+
+    function getNextID(address receiver_) external view returns (uint256) {
+        return optionsByReceiver[receiver_].nextID;
+    }
+
+    function getOptionOfReceiver(address receiver_, uint256 id_)
+        external
+        view
+        returns (Option memory)
+    {
+        return optionsByReceiver[receiver_].opts[id_];
+    }
+
+    //#endregion VIEW FUNCTIONS
 }

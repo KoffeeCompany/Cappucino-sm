@@ -24,7 +24,8 @@ contract OptionPoolMock is Ownable {
     // !!!!!!!!!!!!! EVENTS !!!!!!!!!!!!!
 
     event LogOptionCreation(
-        uint256 indexed id,
+        bytes32 indexed id,
+        uint256 indexed optionId,
         address indexed pool,
         address user,
         uint256 amountOut,
@@ -93,6 +94,7 @@ contract OptionPoolMock is Ownable {
         IERC20(short).safeTransferFrom(msg.sender, address(this), premium);
 
         emit LogOptionCreation(
+            keccak256(abi.encode(optionsByUser[msg.sender].length - 1, address(this))),
             optionsByUser[msg.sender].length - 1,
             address(this),
             msg.sender,
@@ -115,7 +117,7 @@ contract OptionPoolMock is Ownable {
             optionsByUser[msg.sender][id_].amountOut
         );
 
-        debt += optionsByUser[msg.sender][id_].amountOut;
+        debt -= optionsByUser[msg.sender][id_].amountOut;
         debtRatio = _wdiv(debt, IERC20(base).balanceOf(address(this)));
 
         emit LogExercise(address(this), msg.sender, id_);
@@ -126,6 +128,7 @@ contract OptionPoolMock is Ownable {
     // !!!!!!!! VIEW FUNCTION !!!!!!!!!!!!
 
     function getPrice(uint256 amount_) public view returns (uint256) {
+        if (debtRatio == 0) return strike / 10;
         return _wmul(_wmul(bcv, debtRatio), amount_);
     }
 
