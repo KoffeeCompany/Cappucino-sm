@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity 0.8.10;
 
-struct Options {
-    uint256 nextID;
-    Option[] opts;
-}
-
-struct Option {
+// Non Fungible Token Position
+struct OptionPosition {
     uint256 notional;
     address receiver;
     uint256 price;
