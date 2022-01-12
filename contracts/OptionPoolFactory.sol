@@ -1,11 +1,12 @@
-// SPDX-License-Identifier: MIT
-pragma solidity 0.8.7;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity 0.8.10;
 
 import {
     IERC20,
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
+import {IPokeMeResolver} from "./IPokeMeResolver.sol";
 import {OptionPool} from "./OptionPool.sol";
 import {
     Initializable
@@ -21,21 +22,32 @@ import {
     AddressUpgradeable
 } from "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import {
-    IPokeMeResolver
-} from "./IPokeMeResolver.sol";
+    _getSalt
+} from "./functions/FOptionPoolFactory.sol";
+import {
+    _checkDiffTokens,
+    _checkTokenNoAddressZero,
+    _checkPoolNotExist
+} from "./checks/OptionPoolFactoryCheck.sol";
 
+// !!!!!!!!!!!! DONT CHANGE ORDER !!!!!!!!!!!!!!
 contract OptionPoolFactory is
     Initializable,
     Proxied,
     ReentrancyGuardUpgradeable,
-    PausableUpgradeable {
+    PausableUpgradeable
+{
     using SafeERC20 for IERC20;
 
     IPokeMe public immutable pokeMe;
     IPokeMeResolver public immutable pokeMeResolver;
 
+    // !!!!!!!!!!!!!!!! DONT CHANGE ORDER !!!!!!!!!!!!!!!!!
     mapping(bytes32 => address) public getCallOptions;
     address[] public allOptions;
+    // ADD new mutable properties here.
+
+    // !!!!!!!!!!! EVENTS !!!!!!!!!!!!!!
 
     event OptionPoolCreated(
         bytes32 salt,
@@ -62,31 +74,32 @@ contract OptionPoolFactory is
         uint256 bcv_,
         uint256 initialTotalSupply_
     ) external returns (address option) {
-        require(
-            short_ != base_,
-            "Cappucino::OptionFactory:: IDENTICAL_ADDRESSES"
-        );
-        // (address token0, address token1) = tokenA < tokenB
-        //     ? (tokenA, tokenB)
-        //     : (tokenB, tokenA);
-        bytes32 salt = getSalt(short_, base_, expiryTime_);
+        // |||||||||||||  CHECK  |||||||||||||||
+        bytes32 salt;
+        {
+            address short = address(short_);
+            address base = address(base_);
 
-        require(
-            address(short_) != address(0),
-            "Cappucino::OptionFactory:: short token ZERO_ADDRESS"
-        );
-        require(
-            address(base_) != address(0),
-            "Cappucino::OptionFactory:: base token ZERO_ADDRESS"
-        );
-        require(
-            getCallOptions[salt] == address(0),
-            "Cappucino::OptionFactory:: PAIR_EXISTS"
-        ); // single check is sufficient
+            salt = getSalt(short_, base_, expiryTime_);
+
+            _checkDiffTokens(short, base);
+            _checkTokenNoAddressZero(short);
+            _checkTokenNoAddressZero(base);
+            _checkPoolNotExist(getCallOptions[salt], short, base, expiryTime_);
+        }
+
+        // |||||||||||| EFFECT  |||||||||||||||
+
         bytes memory bytecode = type(OptionPool).creationCode;
+
         assembly {
             option := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
+        getCallOptions[salt] = option;
+        allOptions.push(option);
+
+        // |||||||||||| INTERACTION |||||||||||||
+
         OptionPool(option).initialize(
             short_,
             base_,
@@ -98,11 +111,10 @@ contract OptionPoolFactory is
             pokeMeResolver
         );
         OptionPool(option).transferOwnership(msg.sender);
-        getCallOptions[salt] = option;
-        allOptions.push(option);
 
         base_.safeTransferFrom(msg.sender, address(this), initialTotalSupply_);
         base_.safeTransfer(option, initialTotalSupply_);
+
         emit OptionPoolCreated(
             salt,
             short_,
@@ -120,6 +132,6 @@ contract OptionPoolFactory is
         IERC20 base_,
         uint256 expiryTime_
     ) public pure returns (bytes32) {
-        return keccak256(abi.encode(short_, base_, expiryTime_));
+        return _getSalt(short_, base_, expiryTime_);
     }
 }

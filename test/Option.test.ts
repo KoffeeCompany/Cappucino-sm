@@ -1,7 +1,6 @@
 import { expect } from "chai";
 import { Signer } from "@ethersproject/abstract-signer";
 import hre = require("hardhat");
-import { BigNumber } from "@ethersproject/bignumber";
 import { OptionPoolFactory, OptionPool, TokenA, TokenB } from "../typechain";
 
 const { ethers, deployments } = hre;

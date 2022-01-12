@@ -68,22 +68,24 @@ const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: "0.8.7",
+        version: "0.8.10",
         settings: {
           optimizer: { enabled: true, runs: 200000 },
           modelChecker: {
             targets: [
               "balance",
-              "outOfBounds",
               "popEmptyArray",
               "constantCondition",
               "divByZero",
               "assert",
-              "underflow",
-              "overflow",
             ],
             showUnproved: true,
             engine: "none",
+            contracts: {
+              "contracts/OptionPool.sol": ["OptionPool"],
+              "contracts/OptionPoolFactory.sol": ["OptionPoolFactory"],
+              "contracts/PokeMeResolver.sol": ["PokeMeResolver"],
+            },
           },
         },
       },
