@@ -5,7 +5,7 @@ import {
     _checkDiffTokens,
     _checkTokenNoAddressZero,
     _checkPoolNotExist
-} from "../../checks/OptionPoolFactoryCheck.sol";
+} from "../../checks/CheckFunctions.sol";
 
 contract OptionPoolFactoryCheckMock {
     mapping(bytes32 => address) public getCallOptions;

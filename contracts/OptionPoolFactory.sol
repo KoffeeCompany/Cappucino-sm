@@ -28,7 +28,7 @@ import {
     _checkDiffTokens,
     _checkTokenNoAddressZero,
     _checkPoolNotExist
-} from "./checks/OptionPoolFactoryCheck.sol";
+} from "./checks/CheckFunctions.sol";
 
 // !!!!!!!!!!!! DONT CHANGE ORDER !!!!!!!!!!!!!!
 contract OptionPoolFactory is

@@ -15,6 +15,9 @@ import {OptionCanSettle} from "./structs/SOptionResolver.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IOptionPoolFactory} from "./interfaces/IOptionPoolFactory.sol";
 import {IPokeMeResolver} from "./IPokeMeResolver.sol";
+import {
+    _checkTokenNoAddressZero
+} from "./checks/CheckFunctions.sol";
 
 contract OptionPool is Ownable, Initializable {
     using SafeERC20 for IERC20;
@@ -33,6 +36,11 @@ contract OptionPool is Ownable, Initializable {
 
     uint256 public debt; // Increase during creation / Decrease during exercise
     uint256 public debtRatio; //  Call Option Debt Outstanding / Total Supply
+
+    address private _receiver;
+    address private _feeReceiver; // fee receiver, should be the Koffee community wallet
+    uint256 private _feeRatio; // fee ratio
+    uint256 public totalFees; // cumulated fees
 
     mapping(address => Options) public optionsByReceiver;
 
@@ -55,6 +63,14 @@ contract OptionPool is Ownable, Initializable {
         require(
             msg.sender == address(pokeMe),
             "OptionPool::onlyPokeMe: only pokeMe"
+        );
+        _;
+    }
+
+    modifier onlyReceiver() {        
+        require(
+            msg.sender == _receiver,
+            "OptionPool::onlyReceiver: only receiver"
         );
         _;
     }
@@ -101,6 +117,7 @@ contract OptionPool is Ownable, Initializable {
 
     constructor() Ownable() {
         optionPoolFactory = IOptionPoolFactory(msg.sender);
+        _receiver = msg.sender;
     }
 
     // !!!!!!!!!!!!! CONSTRUCTOR !!!!!!!!!!!!!!!!
@@ -159,6 +176,24 @@ contract OptionPool is Ownable, Initializable {
 
     //#endregion ONLY ADMIN
 
+    //#region ONLY RECEIVER  
+
+    function setFeeReceiver(address feeReceiver_) external onlyReceiver {
+        _feeReceiver = feeReceiver_;
+    }
+
+    function setFeeRatio(uint256 feeRatio_) external onlyReceiver {
+        _feeRatio = feeRatio_;
+    } 
+
+    function getFees() external onlyReceiver {
+        require(totalFees > 0, "OptionPool::getFees: no fees.");
+        require(_feeReceiver != address(0), "OptionPool::getFees: fee receiver address is not configured.");
+        base.safeTransferFrom(address(this), _feeReceiver, totalFees);
+        totalFees = 0;
+    }
+    //#endregion ONLY RECEIVER
+
     function getPrice(uint256 amount_) public view returns (uint256) {
         return _wmul(_wmul(bcv, debtRatio), amount_);
     }
@@ -199,7 +234,16 @@ contract OptionPool is Ownable, Initializable {
         debt += notional_;
         debtRatio = _wdiv(debt, baseBalance);
 
-        require(debt <= baseBalance, "OptionPool::create: debt > baseBalance.");
+        uint256 fee = 0;
+        if(_feeRatio != 0){
+            _checkTokenNoAddressZero(_feeReceiver);
+            fee = _wmul(notional_, _feeRatio);
+        }
+
+        require(fee >= 0, "OptionPool::create: fee detected is negative.");
+        totalFees += fee;
+        // add the fee into the debt and see if the protocol has enough as balance
+        require(debt + totalFees <= baseBalance, "OptionPool::create: debt + totalFees > baseBalance.");
 
         uint256 balanceB = short.balanceOf(pool);
 
