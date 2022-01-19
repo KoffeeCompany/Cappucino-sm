@@ -9,7 +9,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {
     Initializable
 } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {_wmul, _wdiv} from "./vendor/DSMath.sol";
+import {_wmul, _wdiv, _add} from "./vendor/DSMath.sol";
 import {Options, Option} from "./structs/SOption.sol";
 import {OptionCanSettle} from "./structs/SOptionResolver.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
@@ -41,6 +41,10 @@ contract OptionPool is Ownable, Initializable {
     address private _feeReceiver; // fee receiver, should be the Koffee community wallet
     uint256 private _feeRatio; // fee ratio
     uint256 public totalFees; // cumulated fees
+
+    uint256 private _settleFeeDelta = 1; // by default we set it to 1
+    uint256 private _settleFeeAvg = 0; // by default we set it to 0
+    uint256 private _settleFeeCount = 0;
 
     mapping(address => Options) public optionsByReceiver;
 
@@ -186,6 +190,10 @@ contract OptionPool is Ownable, Initializable {
         _feeRatio = feeRatio_;
     } 
 
+    function setSettleFeeDelta(uint256 settleFeeDelta_) external onlyReceiver {
+        _settleFeeDelta = settleFeeDelta_;
+    }
+
     function getFees() external onlyReceiver {
         require(totalFees > 0, "OptionPool::getFees: no fees.");
         require(_feeReceiver != address(0), "OptionPool::getFees: fee receiver address is not configured.");
@@ -193,6 +201,11 @@ contract OptionPool is Ownable, Initializable {
         totalFees = 0;
     }
     //#endregion ONLY RECEIVER
+
+    function getSettleFees() public view returns (uint256) {
+        require(_settleFeeDelta > 0, "OptionPool::getSettleFees: no delta set.");  
+        return _wmul(_settleFeeDelta, _settleFeeAvg);  
+    }
 
     function getPrice(uint256 amount_) public view returns (uint256) {
         return _wmul(_wmul(bcv, debtRatio), amount_);
@@ -308,10 +321,22 @@ contract OptionPool is Ownable, Initializable {
         option.settled = true;
         pokeMe.cancelTask(option.pokeMe);
 
+        uint256 settlementFee = 0; // we supposed it's the settlement fee, I do like this because i don't know how pokeMe calculates it
+        _settleFeeAvg = _performSettleFeeAvg(_settleFeeAvg, settlementFee, _settleFeeCount);
+        _settleFeeCount++;
+
         emit LogSettle(address(this), id_, receiver_);
     }
 
     //#endregion USER FUNCTIONS CREATE EXERCISE
+
+    function _performSettleFeeAvg(
+        uint256 settleFeeAvg_, 
+        uint256 settleFee_, 
+        uint256 settleFeeCount_
+    ) private returns (uint256) {
+        return _wdiv(_add(_wmul(settleFeeAvg_, settleFeeCount_), settleFee_), settleFeeCount_+1);
+    }
 
     //#region VIEW FUNCTIONS
 
