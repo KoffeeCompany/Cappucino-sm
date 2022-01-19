@@ -68,6 +68,7 @@ contract OptionPoolFactory is
     function createCallOption(
         IERC20 short_,
         IERC20 base_,
+        IERC20 weth_,
         uint256 expiryTime_,
         uint256 strike_,
         uint256 timeBeforeDeadLine_,
@@ -103,6 +104,7 @@ contract OptionPoolFactory is
         OptionPool(option).initialize(
             short_,
             base_,
+            weth_,
             expiryTime_,
             strike_,
             timeBeforeDeadLine_,

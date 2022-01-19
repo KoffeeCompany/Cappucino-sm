@@ -25,6 +25,7 @@ contract OptionPool is Ownable, Initializable {
     //#region IMMUTABLE PROPERTIES
     IERC20 public short;
     IERC20 public base;
+    IERC20 public weth;
     uint256 public expiryTime;
     uint256 public strike;
     //#endregion IMMUTABLE PROPERTIES
@@ -129,6 +130,7 @@ contract OptionPool is Ownable, Initializable {
     function initialize(
         IERC20 short_,
         IERC20 base_,
+        IERC20 weth_,
         uint256 expiryTime_,
         uint256 strike_,
         uint256 timeBeforeDeadLine_,
@@ -148,6 +150,7 @@ contract OptionPool is Ownable, Initializable {
         bcv = bcv_;
         pokeMe = pokeMe_;
         pokeMeResolver = pokeMeResolver_;
+        weth = weth_;
 
         emit LogOptionPool(
             address(this),
@@ -213,12 +216,16 @@ contract OptionPool is Ownable, Initializable {
 
     //#region USER FUNCTIONS CREATE EXERCISE
 
+    // user buy option
     function create(uint256 notional_, address receiver_) external {
         address pool = address(this);
         Options storage options = optionsByReceiver[receiver_];
 
+        uint256 previewSettleFee = getSettleFees();
+
         Option memory option = Option({
             notional: notional_,
+            previewSettleFee: previewSettleFee,
             receiver: receiver_,
             price: getPrice(notional_),
             startTime: block.timestamp,
@@ -264,13 +271,18 @@ contract OptionPool is Ownable, Initializable {
 
         assert(balanceB + option.price == short.balanceOf(pool));
 
+        // stack the settle fee
+        uint256 balanceW = weth.balanceOf(pool);
+        weth.safeTransferFrom(msg.sender, pool, previewSettleFee); // should i use msg.sender or receiver ??
+        assert(balanceW + previewSettleFee == weth.balanceOf(pool));
+
         emit LogCreateOption(
             pool,
             options.nextID,
             address(short),
             address(base),
-            notional_,
-            _wmul(strike, notional_),
+            option.notional,
+            _wmul(strike, option.notional),
             option.price
         );
     }
@@ -306,6 +318,9 @@ contract OptionPool is Ownable, Initializable {
         short.safeTransferFrom(msg.sender, pool, amountIn);
         base.safeTransfer(msg.sender, option.notional);
 
+        // payback the settleFee
+        weth.safeTransfer(msg.sender, option.previewSettleFee);
+
         assert(balanceB + amountIn == short.balanceOf(pool));
 
         emit LogExerciseOption(pool, id_, amountIn);
@@ -321,9 +336,15 @@ contract OptionPool is Ownable, Initializable {
         option.settled = true;
         pokeMe.cancelTask(option.pokeMe);
 
-        uint256 settlementFee = 0; // we supposed it's the settlement fee, I do like this because i don't know how pokeMe calculates it
+        uint256 settlementFee = 0; // we supposed it's the real settlement fee, I do like this because i don't know how pokeMe calculates it
         _settleFeeAvg = _performSettleFeeAvg(_settleFeeAvg, settlementFee, _settleFeeCount);
         _settleFeeCount++;
+        
+        // we could payback the difference
+        if(option.previewSettleFee > settlementFee)
+        {
+            weth.safeTransfer(msg.sender, option.previewSettleFee - settlementFee);
+        }
 
         emit LogSettle(address(this), id_, receiver_);
     }
