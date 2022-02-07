@@ -6,7 +6,7 @@ import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
-import {IPokeMeResolver} from "./IPokeMeResolver.sol";
+import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
 import {OptionPool} from "./OptionPool.sol";
 import {
     Initializable

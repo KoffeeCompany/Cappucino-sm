@@ -14,7 +14,7 @@ import {Options, Option} from "./structs/SOption.sol";
 import {OptionCanSettle} from "./structs/SOptionResolver.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IOptionPoolFactory} from "./interfaces/IOptionPoolFactory.sol";
-import {IPokeMeResolver} from "./IPokeMeResolver.sol";
+import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
 import {
     _checkTokenNoAddressZero
 } from "./checks/CheckFunctions.sol";
