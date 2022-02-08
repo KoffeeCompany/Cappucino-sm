@@ -19,6 +19,11 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
 
     address public immutable asset;
     address public immutable underlying;
+    address public immutable olympusPool;
+    address public immutable bondDepository;
+
+    uint256 private _marketId;
+    uint256 private _bcv;
 
     // details about the Olympus pro option
     struct Option {
@@ -50,20 +55,28 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
      * @param quoteToken_ is the asset used for premiums and result asset
      * @param factory_ is the option factory contract address
      * @param registry_ is the option registry contract address 
+     * @param olympusPool_ is the Olympus pool address
+     * @param bondDepository_ is the bonddepository address
      */
     constructor(
         address baseToken_,
         address quoteToken_,
         address factory_,
-        address registry_
+        address registry_,
+        address olympusPool_,
+        address bondDepository_
     ) {
         require(baseToken_ != address(0), "!baseToken_");
         require(quoteToken_ != address(0), "!quoteToken_");
         require(factory_ != address(0), "!factory_");
         require(registry_ != address(0), "!registry_");
+        require(olympusPool_ != address(0), "!olympusPool_");
+        require(bondDepository_ != address(0), "!bondDepository_");
 
         asset = quoteToken_;
         underlying = baseToken_;
+        olympusPool = olympusPool_;
+        bondDepository = bondDepository_;
     }
 
     /**
@@ -92,6 +105,9 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         instantExerciseFee = _wdiv(5, 1000);
         instantSettleFee = 0;
 
+        _marketId = marketId_;
+        _bcv = bcv_;
+
         timeBeforeDeadline = timeBeforeDeadLine_;
     }
 
@@ -115,7 +131,56 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         require(params.notional != 0, "!notional");
         require(params.strike != 0, "!strike");
 
-        //IBondDepository bondDepository = IBondDepository()
+        uint256 olympusBalance = olympusAssetBalance();        
+        uint256 debt = _wmul(params.notional, params.strike);
+        fee = fee(debt);
+
+        require(debt + fee <= olympusBalance, "debt + fee > olympusBalance.");
+        // lock the return amount from olympus pool
+        short.safeTransferFrom(olympusPool, address(this), debt + fee);
+
+        // lock the premium amount from the user
+        uint256 prime = prime(params.strike);
+        short.safeTransferFrom(msg.sender, address(this), prime);
         _safeMint(params.recipient, (tokenId = _nextId++));
+    }
+
+    /**
+     * @notice Returns the asset balance on the olympus pool.
+     */
+    function olympusAssetBalance() public view returns (uint256) {
+        return IERC20(quoteToken_).balanceOf(olympusPool);
+    }
+
+    /**
+     * @notice Returns the maximum fee between the settlement and the exercise.
+     */
+    function fee(uint256 debt) public view returns (uint256 fee) {      
+        uint256 feeExercise = 0;
+        uint256 feeSettle = 0;
+        if(instantExerciseFee != 0){
+            feeExercise = _wmul(debt, instantExerciseFee);
+        }        
+        require(feeExercise >= 0, "exercise fee detected is negative.");
+
+        if(instantSettleFee != 0){
+            feeSettle = _wmul(debt, instantSettleFee);
+        }        
+        require(feeSettle >= 0, "settle fee detected is negative.");
+        fee = feeExercise;
+        if(feeSettle > feeExercise)
+        {
+            fee = feeSettle;
+        }
+    }
+
+    /**
+     * @notice Returns the prime by market id.
+     */
+    function prime(uint256 strike) public view returns (uint256 prime) {      
+        // TODO : what about the strike ???
+        IBondDepository bond = IBondDepository(bondDepository);
+        uint256 debtRatio = bond.debtRatio(marketId_);
+        prime = _wmul(debtRatio, _bcv);
     }
 }
