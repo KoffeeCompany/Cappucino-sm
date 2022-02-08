@@ -10,6 +10,7 @@ import {
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import {BlockTimestamp} from "./bases/BlockTimestamp.sol";
 import {ExpiryValidation} from "./bases/ExpiryValidation.sol";
+import {IBondDepository} from "./interfaces/Olympus/IBondDepository.sol";
 import "./vendor/DSMath.sol";
 
 contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation, OlympusProOptionManager
@@ -133,15 +134,15 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
 
         uint256 olympusBalance = olympusAssetBalance();        
         uint256 debt = _wmul(params.notional, params.strike);
-        fee = fee(debt);
+        uint256 fee = maxFee(debt);
 
         require(debt + fee <= olympusBalance, "debt + fee > olympusBalance.");
         // lock the return amount from olympus pool
-        short.safeTransferFrom(olympusPool, address(this), debt + fee);
+        IERC20(underlying).safeTransferFrom(olympusPool, address(this), _add(debt,fee));
 
         // lock the premium amount from the user
         uint256 prime = prime(params.strike);
-        short.safeTransferFrom(msg.sender, address(this), prime);
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), prime);
         _safeMint(params.recipient, (tokenId = _nextId++));
     }
 
@@ -149,13 +150,13 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
      * @notice Returns the asset balance on the olympus pool.
      */
     function olympusAssetBalance() public view returns (uint256) {
-        return IERC20(quoteToken_).balanceOf(olympusPool);
+        return IERC20(underlying).balanceOf(olympusPool);
     }
 
     /**
      * @notice Returns the maximum fee between the settlement and the exercise.
      */
-    function fee(uint256 debt) public view returns (uint256 fee) {      
+    function maxFee(uint256 debt) public view returns (uint256 fee) {      
         uint256 feeExercise = 0;
         uint256 feeSettle = 0;
         if(instantExerciseFee != 0){
@@ -180,7 +181,7 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
     function prime(uint256 strike) public view returns (uint256 prime) {      
         // TODO : what about the strike ???
         IBondDepository bond = IBondDepository(bondDepository);
-        uint256 debtRatio = bond.debtRatio(marketId_);
+        uint256 debtRatio = bond.debtRatio(_marketId);
         prime = _wmul(debtRatio, _bcv);
     }
 }
