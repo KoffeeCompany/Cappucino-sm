@@ -18,7 +18,7 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
 
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
-  const address = getAddresses(hre.network.name);
+  const address = getAddresses();
   await deploy("OptionPoolFactory", {
     from: deployer,
     proxy: {

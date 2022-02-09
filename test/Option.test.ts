@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { Signer } from "@ethersproject/abstract-signer";
 import hre = require("hardhat");
 import { OptionPoolFactory, OptionPool, TokenA, TokenB } from "../typechain";
+import { getAddresses } from "../hardhat/deployments";
 
 const { ethers, deployments } = hre;
 
@@ -48,6 +49,7 @@ describe("Option", function () {
     await optionPoolFactory.createCallOption(
       short,
       base,
+      getAddresses().WETH,
       expiryTime,
       strike,
       timeBeforeDeadLine,
@@ -78,6 +80,7 @@ describe("Option", function () {
     await optionPoolFactory.createCallOption(
       short,
       base,
+      getAddresses().WETH,
       expiryTime,
       strike,
       timeBeforeDeadLine,
@@ -120,6 +123,7 @@ describe("Option", function () {
     await optionPoolFactory.createCallOption(
       short,
       base,
+      getAddresses().WETH,
       expiryTime,
       strike,
       timeBeforeDeadLine,
