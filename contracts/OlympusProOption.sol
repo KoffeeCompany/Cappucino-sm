@@ -11,6 +11,8 @@ import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import {BlockTimestamp} from "./bases/BlockTimestamp.sol";
 import {ExpiryValidation} from "./bases/ExpiryValidation.sol";
 import {IBondDepository} from "./interfaces/Olympus/IBondDepository.sol";
+import {IPokeMe} from "./interfaces/IPokeMe.sol";
+import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
 import "./vendor/DSMath.sol";
 
 contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation, OlympusProOptionManager
@@ -18,10 +20,10 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
-    address public immutable asset;
-    address public immutable underlying;
     address public immutable olympusPool;
     address public immutable bondDepository;
+    IPokeMe public pokeMe;
+    IPokeMeResolver public pokeMeResolver;
 
     uint256 private _marketId;
     uint256 private _bcv;
@@ -34,18 +36,26 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         uint256 strike;
         // the address that is approved for spending this token
         address operator;
-        // the fees
-        uint256 feeExercise;
-        uint256 feeSettle;
+        // the fee
+        uint256 fee;
         // how many tokens user will get
-        uint128 tokensWillReceived;
+        uint256 tokensWillReceived;
+
+        uint256 deadline;
+        uint256 createTime;
         
         bytes32 pokeMe;
+        bool settled;
+    }
+
+    struct OptionSettlement {
+        address operator;
+        uint256 tokenId;
     }
 
 
     /// @dev The market ID option data by user address
-    mapping(uint256 => mapping(address => Option)) private _options;
+    mapping(uint256 => Option) private _options;
 
     /// @dev The ID of the next token that will be minted. Skips 0
     uint176 private _nextId = 1;
@@ -78,6 +88,7 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         underlying = baseToken_;
         olympusPool = olympusPool_;
         bondDepository = bondDepository_;
+        totalFees = 0;
     }
 
     /**
@@ -91,7 +102,9 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         address owner_,   
         uint256 marketId_,  
         uint256 timeBeforeDeadLine_,
-        uint256 bcv_
+        uint256 bcv_,
+        IPokeMe pokeMe_,
+        IPokeMeResolver pokeMeResolver_
     ) external initializer {
         require(owner_ != address(0), "!owner_");
         require(timeBeforeDeadLine_ != 0, "!timeBeforeDeadLine_");
@@ -103,11 +116,13 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         __ERC721_init("Olympus Option NFT-V1", "OHM-OPT");
 
         // hardcode the initial exercise fee and settle fee
-        instantExerciseFee = _wdiv(5, 1000);
-        instantSettleFee = 0;
+        instantFee = _wdiv(5, 1000);
 
         _marketId = marketId_;
         _bcv = bcv_;
+
+        pokeMe = pokeMe_;
+        pokeMeResolver = pokeMeResolver_;
 
         timeBeforeDeadline = timeBeforeDeadLine_;
     }
@@ -132,9 +147,10 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         require(params.notional != 0, "!notional");
         require(params.strike != 0, "!strike");
 
-        uint256 olympusBalance = olympusAssetBalance();        
+        uint256 olympusBalance = olympusUnderlyingBalance();        
         uint256 debt = _wmul(params.notional, params.strike);
         uint256 fee = maxFee(debt);
+        totalFees += fee;
 
         require(debt + fee <= olympusBalance, "debt + fee > olympusBalance.");
         // lock the return amount from olympus pool
@@ -144,12 +160,91 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         uint256 prime = prime(params.strike);
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), prime);
         _safeMint(params.recipient, (tokenId = _nextId++));
+
+        OptionParams memory opar = OptionParams({
+            notional: params.notional,
+            recipient: params.recipient,
+            strike: params.strike,
+            fee: fee,
+            tokensWillReceived: debt,
+            asset: asset,
+            underlying: underlying,
+            tokenId: tokenId,
+            deadline: params.deadline
+        });
+        _options[tokenId] = _createOption(opar);
+    }
+
+    function _createOption(OptionParams memory params) private returns(Option memory){
+        return Option({
+            notional: params.notional,
+            operator: params.recipient,
+            strike: params.strike,
+            deadline: params.deadline,
+            createTime: _blockTimestamp(),
+            fee: params.fee,
+            tokensWillReceived: params.tokensWillReceived,
+            pokeMe: pokeMe.createTaskNoPrepayment(
+                address(this),
+                this.settle.selector,
+                address(pokeMeResolver),
+                abi.encodeWithSelector(
+                    IPokeMeResolver.checker.selector,
+                    OptionSettlement({
+                        operator: params.recipient,
+                        tokenId: params.tokenId
+                    })
+                ),
+                params.underlying
+            ),
+            settled: false
+        });
+    }
+
+    function burn(uint256 tokenId_) external payable isAuthorizedForToken(tokenId_) {
+        Option storage option = _options[tokenId_];
+        delete _options[tokenId_];
+        _burn(tokenId_);
+    }
+
+    function settle(address operator_, uint256 tokenId_) public onlyPokeMe {
+
+        Option storage option = _options[tokenId_];
+
+        require(!option.settled, "already settled.");
+
+        option.settled = true;
+        pokeMe.cancelTask(option.pokeMe);
+        IERC20(underlying).safeTransfer(olympusPool, option.tokensWillReceived);
+    }
+
+    function exercise(uint256 tokenId_) external payable isAuthorizedForToken(tokenId_) {
+        Option storage option = _options[tokenId_];
+
+        require(!option.settled, "already settled.");
+        option.settled = true;
+
+        require(
+            option.createTime + option.deadline < _blockTimestamp(),
+            "not expired."
+        );
+
+        require(
+            option.createTime + option.deadline + timeBeforeDeadline >
+                _blockTimestamp(),
+            "deadline reached."
+        );
+        
+        pokeMe.cancelTask(option.pokeMe);
+
+        IERC20(asset).safeTransferFrom(msg.sender, olympusPool, option.notional);
+        IERC20(underlying).safeTransfer(msg.sender, option.tokensWillReceived);
     }
 
     /**
-     * @notice Returns the asset balance on the olympus pool.
+     * @notice Returns the underlying balance on the olympus pool.
      */
-    function olympusAssetBalance() public view returns (uint256) {
+    function olympusUnderlyingBalance() public view returns (uint256) {
         return IERC20(underlying).balanceOf(olympusPool);
     }
 
@@ -157,22 +252,11 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
      * @notice Returns the maximum fee between the settlement and the exercise.
      */
     function maxFee(uint256 debt) public view returns (uint256 fee) {      
-        uint256 feeExercise = 0;
-        uint256 feeSettle = 0;
-        if(instantExerciseFee != 0){
-            feeExercise = _wmul(debt, instantExerciseFee);
+        uint256 fee = 0;
+        if(instantFee != 0){
+            fee = _wmul(debt, instantFee);
         }        
-        require(feeExercise >= 0, "exercise fee detected is negative.");
-
-        if(instantSettleFee != 0){
-            feeSettle = _wmul(debt, instantSettleFee);
-        }        
-        require(feeSettle >= 0, "settle fee detected is negative.");
-        fee = feeExercise;
-        if(feeSettle > feeExercise)
-        {
-            fee = feeSettle;
-        }
+        require(fee >= 0, "fee detected is negative.");
     }
 
     /**
@@ -183,5 +267,13 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         IBondDepository bond = IBondDepository(bondDepository);
         uint256 debtRatio = bond.debtRatio(_marketId);
         prime = _wmul(debtRatio, _bcv);
+    }    
+
+    modifier onlyPokeMe() {
+        require(
+            msg.sender == address(pokeMe),
+            "only pokeMe"
+        );
+        _;
     }
 }

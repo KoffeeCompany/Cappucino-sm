@@ -8,4 +8,17 @@ interface IOlympusProOption {
         uint256 strike;
         uint256 deadline;
     }
+
+
+    struct OptionParams {
+        address recipient;
+        address asset;
+        address underlying;
+        uint256 notional;
+        uint256 strike;
+        uint256 deadline;
+        uint256 fee; 
+        uint256 tokensWillReceived;
+        uint256 tokenId;
+    }
 }

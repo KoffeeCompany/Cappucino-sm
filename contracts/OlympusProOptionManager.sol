@@ -11,6 +11,11 @@ import {
 import {
     OwnableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {
+    IERC20,
+    SafeERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "./vendor/DSMath.sol";
 
@@ -21,26 +26,30 @@ contract OlympusProOptionManager is
     OwnableUpgradeable,
     ERC721Upgradeable {
 
+    using SafeERC20 for IERC20;
+    using SafeMath for uint256;
+
+    address public asset;
+    address public underlying;
     // Privileged role that is able to select the option terms (strike price, expiry) to short
     address public manager;
 
-    // Fee incurred when exercising the option
-    uint256 public instantExerciseFee;
-
-    // Fee incurred when settle the option
-    uint256 public instantSettleFee;
+    // Fee 
+    uint256 public instantFee;
     
     // time before we consider the option is expired (1 day)
     uint256 public timeBeforeDeadline;
 
-    // Recipient for withdrawal fees
+    // Recipient for fees
     address public feeRecipient;
+    
+    // cumulated fees
+    uint256 public totalFees; // cumulated fees
 
     string UNAUTHORIZED = "UNAUTHORIZED";
 
     event ManagerChanged(address oldManager, address newManager);
-    event ExerciseFeeSet(uint256 oldFee, uint256 newFee);
-    event SettleFeeSet(uint256 oldFee, uint256 newFee);
+    event FeeSet(uint256 oldFee, uint256 newFee);
 
     modifier onlyManager() {
         require(msg.sender == manager, UNAUTHORIZED);
@@ -60,34 +69,30 @@ contract OlympusProOptionManager is
     }
 
     /**
-     * @notice Sets the new exercise fee
-     * @param newExerciseFee is the fee paid in tokens when exercising
+     * @notice Sets the new fee
+     * @param newFee is the fee paid in tokens
      */
-    function setExerciseFee(uint256 newExerciseFee) external onlyManager {
-        require(newExerciseFee > 0, "exerciseFee != 0");
+    function setFee(uint256 newFee) external onlyManager {
+        require(newFee > 0, "fee != 0");
 
-        // cap max exercise fees to 30% of the output amount
-        require(newExerciseFee < _wdiv(3, 100), "exerciseFee >= 30%");
+        // cap max fees to 30% of the output amount
+        require(newFee < _wdiv(3, 100), "fee >= 30%");
 
-        uint256 oldFee = instantExerciseFee;
-        emit ExerciseFeeSet(oldFee, newExerciseFee);
+        uint256 oldFee = instantFee;
+        emit FeeSet(oldFee, newFee);
 
-        instantExerciseFee = newExerciseFee;
+        instantFee = newFee;
+    }    
+
+    function getCumulatedFees() external onlyManager {
+        require(totalFees > 0, "no fees.");
+        require(feeRecipient != address(0), "fee recipient address is not configured.");
+        IERC20(underlying).safeTransferFrom(address(this), feeRecipient, totalFees);
+        totalFees = 0;
     }
 
-    /**
-     * @notice Sets the new settlement fee
-     * @param newSettleFee is the fee paid in tokens when settlement
-     */
-    function setSettleFee(uint256 newSettleFee) external onlyManager {
-        require(newSettleFee > 0, "settleFee != 0");
-
-        // cap max settle fees to 30% of the output amount
-        require(newSettleFee < _wdiv(3, 100), "settleFee >= 30%");
-
-        uint256 oldFee = instantSettleFee;
-        emit SettleFeeSet(oldFee, newSettleFee);
-
-        instantSettleFee = newSettleFee;
+    modifier isAuthorizedForToken(uint256 tokenId) {
+        require(_isApprovedOrOwner(msg.sender, tokenId), 'Not approved');
+        _;
     }
 }
