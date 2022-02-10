@@ -8,14 +8,13 @@ import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import {BlockTimestamp} from "./bases/BlockTimestamp.sol";
 import {ExpiryValidation} from "./bases/ExpiryValidation.sol";
 import {IBondDepository} from "./interfaces/Olympus/IBondDepository.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
 import "./vendor/DSMath.sol";
 
-contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation, OlympusProOptionManager
+contract OlympusProOption is IOlympusProOption, ExpiryValidation, OlympusProOptionManager
 {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
@@ -65,7 +64,6 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
      * @param baseToken_ is the asset used for collateral
      * @param quoteToken_ is the asset used for premiums and result asset
      * @param factory_ is the option factory contract address
-     * @param registry_ is the option registry contract address 
      * @param olympusPool_ is the Olympus pool address
      * @param bondDepository_ is the bonddepository address
      */
@@ -73,14 +71,12 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         address baseToken_,
         address quoteToken_,
         address factory_,
-        address registry_,
         address olympusPool_,
         address bondDepository_
     ) {
         require(baseToken_ != address(0), "!baseToken_");
         require(quoteToken_ != address(0), "!quoteToken_");
         require(factory_ != address(0), "!factory_");
-        require(registry_ != address(0), "!registry_");
         require(olympusPool_ != address(0), "!olympusPool_");
         require(bondDepository_ != address(0), "!bondDepository_");
 
@@ -215,6 +211,7 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
 
         option.settled = true;
         pokeMe.cancelTask(option.pokeMe);
+        // burn(tokenId_) ??
         IERC20(underlying).safeTransfer(olympusPool, option.tokensWillReceived);
     }
 
@@ -236,7 +233,7 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
         );
         
         pokeMe.cancelTask(option.pokeMe);
-
+        // burn(tokenId_) ??
         IERC20(asset).safeTransferFrom(msg.sender, olympusPool, option.notional);
         IERC20(underlying).safeTransfer(msg.sender, option.tokensWillReceived);
     }
@@ -264,6 +261,7 @@ contract OlympusProOption is IOlympusProOption, BlockTimestamp, ExpiryValidation
      */
     function prime(uint256 strike) public view returns (uint256 prime) {      
         // TODO : what about the strike ???
+        // still not that clear
         IBondDepository bond = IBondDepository(bondDepository);
         uint256 debtRatio = bond.debtRatio(_marketId);
         prime = _wmul(debtRatio, _bcv);
