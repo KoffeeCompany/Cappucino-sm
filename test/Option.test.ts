@@ -3,7 +3,6 @@ import { Signer } from "@ethersproject/abstract-signer";
 import hre = require("hardhat");
 import { OptionPoolFactory, OptionPool, TokenA, TokenB } from "../typechain";
 import { getAddresses } from "../hardhat/deployments";
-
 const { ethers, deployments } = hre;
 
 describe("Option", function () {
