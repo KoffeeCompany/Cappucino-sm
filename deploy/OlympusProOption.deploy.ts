@@ -21,9 +21,6 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
   const address = getAddresses();
   await deploy("OlympusProOption", {
     from: deployer,
-    proxy: {
-      owner: deployer,
-    },
     args: [
       address.GELETHGUNILP,
       address.GEL,

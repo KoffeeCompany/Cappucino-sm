@@ -13,6 +13,7 @@ import {IBondDepository} from "./interfaces/Olympus/IBondDepository.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
 import "./vendor/DSMath.sol";
+//import "hardhat/console.sol";
 
 contract OlympusProOption is IOlympusProOption, ExpiryValidation, OlympusProOptionManager
 {
@@ -85,6 +86,9 @@ contract OlympusProOption is IOlympusProOption, ExpiryValidation, OlympusProOpti
         olympusPool = olympusPool_;
         bondDepository = bondDepository_;
         totalFees = 0;
+
+        // hardcode the initial exercise fee and settle fee
+        instantFee = _wdiv(5, 10 ** 3);
     }
 
     /**
@@ -110,9 +114,6 @@ contract OlympusProOption is IOlympusProOption, ExpiryValidation, OlympusProOpti
         __Ownable_init();
         transferOwnership(owner_);
         __ERC721_init("Olympus Option NFT-V1", "OHM-OPT");
-
-        // hardcode the initial exercise fee and settle fee
-        instantFee = _wdiv(5, 1000);
 
         _marketId = marketId_;
         _bcv = bcv_;

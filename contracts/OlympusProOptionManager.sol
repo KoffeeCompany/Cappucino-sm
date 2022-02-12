@@ -18,6 +18,7 @@ import {
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "./vendor/DSMath.sol";
+//import "hardhat/console.sol";
 
 contract OlympusProOptionManager is 
     Initializable,
@@ -76,7 +77,7 @@ contract OlympusProOptionManager is
         require(newFee > 0, "fee != 0");
 
         // cap max fees to 30% of the output amount
-        require(newFee < _wdiv(3, 100), "fee >= 30%");
+        require(newFee < _wdiv(3, 10 ** 1), "fee >= 30%");
 
         uint256 oldFee = instantFee;
         emit FeeSet(oldFee, newFee);
@@ -89,6 +90,15 @@ contract OlympusProOptionManager is
         require(feeRecipient != address(0), "fee recipient address is not configured.");
         IERC20(underlying).safeTransferFrom(address(this), feeRecipient, totalFees);
         totalFees = 0;
+    }    
+
+    /**
+     * @notice Sets the new fee recipient
+     * @param newFeeRecipient is the address of the new fee recipient
+     */
+    function setFeeRecipient(address newFeeRecipient) external onlyManager {
+        require(newFeeRecipient != address(0), "!newFeeRecipient");
+        feeRecipient = newFeeRecipient;
     }
 
     modifier isAuthorizedForToken(uint256 tokenId) {
