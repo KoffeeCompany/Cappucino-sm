@@ -75,7 +75,6 @@ contract OlympusProOption is
      * @param baseToken_ is the asset used for collateral
      * @param quoteToken_ is the asset used for premiums and result asset
      * @param factory_ is the option factory contract address
-     * @param registry_ is the option registry contract address
      * @param olympusPool_ is the Olympus pool address
      * @param bondDepository_ is the bonddepository address
      */
@@ -83,14 +82,12 @@ contract OlympusProOption is
         address baseToken_,
         address quoteToken_,
         address factory_,
-        address registry_,
         address olympusPool_,
         address bondDepository_
     ) {
         require(baseToken_ != address(0), "!baseToken_");
         require(quoteToken_ != address(0), "!quoteToken_");
         require(factory_ != address(0), "!factory_");
-        require(registry_ != address(0), "!registry_");
         require(olympusPool_ != address(0), "!olympusPool_");
         require(bondDepository_ != address(0), "!bondDepository_");
 
@@ -99,6 +96,9 @@ contract OlympusProOption is
         olympusPool = olympusPool_;
         bondDepository = bondDepository_;
         totalFees = 0;
+
+        // hardcode the initial exercise fee and settle fee
+        instantFee = _wdiv(5, 10 ** 3);
     }
 
     /**
