@@ -141,24 +141,70 @@ describe("OlympusProOption", function () {
     ).to.be.revertedWith("!newFeeRecipient");
   });
 
-//   it("#6: should revert when calling getCumulatedFees with feeReception address zero", async function () {
-//     const user2Address = await user2.getAddress();
-//     const owner = await user.getAddress();
-//     const marketId = 0;
-//     const timeBeforeDeadLine = 3600 * 24; // 1 day
-//     const bcv = 2;
-//     const pokeMe = getAddresses().PokeMe;
-//     await option.initialize(
-//       owner,
-//       marketId,
-//       timeBeforeDeadLine,
-//       bcv,
-//       pokeMe,
-//       pokeMeResolver.address
-//     );
-//     await option.connect(user).setManager(user2Address);
-//     await expect(
-//         option.connect(user2).getCumulatedFees()
-//     ).to.be.revertedWith("!newFeeRecipient");
-//   });
+  it("#6: should revert when notional is zero", async function () {
+    const owner = await user.getAddress();
+    const marketId = 0;
+    const timeBeforeDeadLine = 3600 * 24; // 1 day
+    const bcv = 2;
+    const pokeMe = getAddresses().PokeMe;
+    await option.initialize(
+      owner,
+      marketId,
+      timeBeforeDeadLine,
+      bcv,
+      pokeMe,
+      pokeMeResolver.address
+    );
+    await expect(
+      option.connect(user2).buy({
+        notional: 0,
+        strike: 1,
+        deadline: Date.now() + 3600 * 1,
+      })
+    ).to.be.revertedWith("OlympusProOption::buy: !notional");
+  });
+
+  it("#7: should revert when strike is zero", async function () {
+    const owner = await user.getAddress();
+    const marketId = 0;
+    const timeBeforeDeadLine = 3600 * 24; // 1 day
+    const bcv = 2;
+    const pokeMe = getAddresses().PokeMe;
+    await option.initialize(
+      owner,
+      marketId,
+      timeBeforeDeadLine,
+      bcv,
+      pokeMe,
+      pokeMeResolver.address
+    );
+    await expect(
+      option.connect(user2).buy({
+        notional: 100,
+        strike: 0,
+        deadline: Date.now() + 3600 * 1,
+      })
+    ).to.be.revertedWith("OlympusProOption::buy: !strike");
+  });
+
+  //   it("#6: should revert when calling getCumulatedFees with feeReception address zero", async function () {
+  //     const user2Address = await user2.getAddress();
+  //     const owner = await user.getAddress();
+  //     const marketId = 0;
+  //     const timeBeforeDeadLine = 3600 * 24; // 1 day
+  //     const bcv = 2;
+  //     const pokeMe = getAddresses().PokeMe;
+  //     await option.initialize(
+  //       owner,
+  //       marketId,
+  //       timeBeforeDeadLine,
+  //       bcv,
+  //       pokeMe,
+  //       pokeMeResolver.address
+  //     );
+  //     await option.connect(user).setManager(user2Address);
+  //     await expect(
+  //         option.connect(user2).getCumulatedFees()
+  //     ).to.be.revertedWith("!newFeeRecipient");
+  //   });
 });

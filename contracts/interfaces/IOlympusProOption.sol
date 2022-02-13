@@ -2,8 +2,7 @@
 pragma solidity 0.8.10;
 
 interface IOlympusProOption {
-    struct MintParams {
-        address recipient;
+    struct BuyParams {
         uint256 notional;
         uint256 strike;
         uint256 deadline;

@@ -138,26 +138,22 @@ contract OlympusProOption is
     }
 
     /**
-     * @notice Initializes the contract with storage variables.
+     * @notice Buy the option.
      * @param params mint parameter composed by :
      * recipient is the buyer of the contract who pay the premium
      * notional is the amount of quote token to spend
      * deadline is the option expiry time
      * strike is the price at which to exercise option
      */
-    function mint(MintParams calldata params)
+    function buy(BuyParams calldata params)
         external
         payable
         nonReentrant
         checkExpiry(params.deadline, timeBeforeDeadline)
         returns (uint256 tokenId)
     {
-        require(
-            params.recipient != address(0),
-            "OlympusProOption::mint: !recipient"
-        );
-        require(params.notional != 0, "OlympusProOption::mint: !notional");
-        require(params.strike != 0, "OlympusProOption::mint: !strike");
+        require(params.notional != 0, "OlympusProOption::buy: !notional");
+        require(params.strike != 0, "OlympusProOption::buy: !strike");
 
         uint256 olympusBalance = olympusUnderlyingBalance();
         uint256 debt = _wmul(params.notional, params.strike);
@@ -175,17 +171,17 @@ contract OlympusProOption is
         // lock the premium amount from the user
         // TODO check if prime has notional precision.
         // Should be set that way during initialization?
-        uint256 prime = prime(params.strike);
+        uint256 prime = prime();
         IERC20(underlying).safeTransferFrom(
             msg.sender,
             address(this),
             getPremium(address(underlying), prime, params.notional)
         );
-        _safeMint(params.recipient, (tokenId = _nextId++));
+        _safeMint(msg.sender, (tokenId = _nextId++));
 
         OptionParams memory opar = OptionParams({
             notional: params.notional,
-            recipient: params.recipient,
+            recipient: msg.sender,
             strike: params.strike,
             fee: fee,
             tokensWillReceived: debt,
@@ -288,10 +284,10 @@ contract OlympusProOption is
     /**
      * @notice Returns the maximum fee between the settlement and the exercise.
      */
-    function maxFee(uint256 debt) public view returns (uint256 fee) {
+    function maxFee(uint256 debt_) public view returns (uint256 fee) {
         uint256 fee = 0;
         if (instantFee != 0) {
-            fee = _wmul(debt, instantFee);
+            fee = _wmul(debt_, instantFee);
         }
         require(fee >= 0, "fee detected is negative.");
     }
@@ -299,8 +295,7 @@ contract OlympusProOption is
     /**
      * @notice Returns the prime by market id.
      */
-    function prime(uint256 strike) public view returns (uint256 prime) {
-        // TODO : what about the strike ???
+    function prime() public view returns (uint256 prime) {
         IBondDepository bond = IBondDepository(bondDepository);
         uint256 debtRatio = bond.debtRatio(_marketId);
         prime = _wmul(debtRatio, _bcv);

@@ -5,7 +5,7 @@ import "./BlockTimestamp.sol";
 
 abstract contract ExpiryValidation is BlockTimestamp {
     modifier checkExpiry(uint256 deadline, uint256 delay) {
-        require(_blockTimestamp() + delay <= deadline, 'Transaction too old');
+        require(_blockTimestamp() + delay <= deadline, "Transaction too old");
         _;
     }
 }
