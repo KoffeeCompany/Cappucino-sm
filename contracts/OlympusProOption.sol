@@ -23,6 +23,7 @@ import {
     _omul,
     _odiv
 } from "./vendor/DSMath.sol";
+import "hardhat/console.sol";
 
 contract OlympusProOption is
     IOlympusProOption,

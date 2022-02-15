@@ -51,6 +51,7 @@ contract OlympusProOptionManager is
 
     event ManagerChanged(address oldManager, address newManager);
     event FeeSet(uint256 oldFee, uint256 newFee);
+    event TimeBeforeDeadLineSet(uint256 oldTimeBeforeDeadLine, uint256 newTimeBeforeDeadLine);
 
     modifier onlyManager() {
         require(msg.sender == manager, UNAUTHORIZED);
@@ -61,28 +62,28 @@ contract OlympusProOptionManager is
      * @notice Sets the new manager.
      * @param newManager is the new manager
      */
-    function setManager(address newManager) external onlyOwner {
-        require(newManager != address(0), "!newManager");
+    function setManager(address newManager_) external onlyOwner {
+        require(newManager_ != address(0), "!newManager");
         address oldManager = manager;
-        manager = newManager;
+        manager = newManager_;
 
-        emit ManagerChanged(oldManager, newManager);
+        emit ManagerChanged(oldManager, newManager_);
     }
 
     /**
      * @notice Sets the new fee
      * @param newFee is the fee paid in tokens
      */
-    function setFee(uint256 newFee) external onlyManager {
-        require(newFee > 0, "fee != 0");
+    function setFee(uint256 newFee_) external onlyManager {
+        require(newFee_ > 0, "fee != 0");
 
         // cap max fees to 30% of the output amount
-        require(newFee < _wdiv(3, 10 ** 1), "fee >= 30%");
+        require(newFee_ < _wdiv(3, 10 ** 1), "fee >= 30%");
 
         uint256 oldFee = instantFee;
-        emit FeeSet(oldFee, newFee);
+        emit FeeSet(oldFee, newFee_);
 
-        instantFee = newFee;
+        instantFee = newFee_;
     }    
 
     function getCumulatedFees() external onlyManager {
@@ -90,19 +91,29 @@ contract OlympusProOptionManager is
         require(feeRecipient != address(0), "fee recipient address is not configured.");
         IERC20(underlying).safeTransferFrom(address(this), feeRecipient, totalFees);
         totalFees = 0;
-    }    
+    } 
+
+    function setTimeBeforeDeadLine(uint256 timeBeforeDeadLine_)
+        external
+        onlyManager
+    {
+        require(timeBeforeDeadLine_ != 0, "!timeBeforeDeadLine.");
+        uint oldTimeBeforeDeadLine = timeBeforeDeadLine;
+        emit TimeBeforeDeadLineSet(oldTimeBeforeDeadLine, timeBeforeDeadLine_);
+        timeBeforeDeadLine = timeBeforeDeadLine_;
+    }   
 
     /**
      * @notice Sets the new fee recipient
      * @param newFeeRecipient is the address of the new fee recipient
      */
-    function setFeeRecipient(address newFeeRecipient) external onlyManager {
-        require(newFeeRecipient != address(0), "!newFeeRecipient");
-        feeRecipient = newFeeRecipient;
+    function setFeeRecipient(address newFeeRecipient_) external onlyManager {
+        require(newFeeRecipient_ != address(0), "!newFeeRecipient");
+        feeRecipient = newFeeRecipient_;
     }
 
-    modifier isAuthorizedForToken(uint256 tokenId) {
-        require(_isApprovedOrOwner(msg.sender, tokenId), 'Not approved');
+    modifier isAuthorizedForToken(uint256 tokenId_) {
+        require(_isApprovedOrOwner(msg.sender, tokenId_), 'Not approved');
         _;
     }
 }
