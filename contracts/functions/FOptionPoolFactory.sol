@@ -12,9 +12,10 @@ function _getSalt(
 }
 
 function _getSalt(
+    IERC20 short_,
     IERC20 base_,
     uint256 marketId_,
     uint256 expiryTime_
 ) pure returns (bytes32) {
-    return keccak256(abi.encode(marketId_, base_, expiryTime_));
+    return keccak256(abi.encode(marketId_, short_, base_, expiryTime_));
 }

@@ -25,7 +25,8 @@ contract OlympusProOptionFactory is
         
     IPokeMe public immutable pokeMe;
     IPokeMeResolver public immutable pokeMeResolver;
-    IBondDepository private bondDepository;
+    address public immutable bondDepository;
+    address public immutable olympusPool;
 
     // !!!!!!!!!!!!!!!! DONT CHANGE ORDER !!!!!!!!!!!!!!!!!
     mapping(bytes32 => address) public getCallOptions;
@@ -34,16 +35,30 @@ contract OlympusProOptionFactory is
 
     // !!!!!!!!!!! EVENTS !!!!!!!!!!!!!!
 
+    event OlympusProOptionCreated(
+        bytes32 salt,
+        IERC20 indexed short,
+        IERC20 indexed base,
+        uing256 marketId,
+        uint256 expiryTime,
+        uint256 strike,
+        uint256 timeBeforeDeadLine,
+        uint256 bcv
+    );
+
     constructor(IPokeMe pokeMe_, 
         IPokeMeResolver pokeMeResolver_, 
-        IBondDepository bondDepository_
+        address bondDepository_,
+        address olympusPool_
     ) {
         pokeMe = pokeMe_;
         pokeMeResolver = pokeMeResolver_;
         bondDepository = bondDepository_;
+        olympusPool = olympusPool_;
     }
 
     function createCallOption(
+        IERC20 short_,
         IERC20 base_,
         uint256 marketId_,
         uint256 timeBeforeDeadLine_,
@@ -54,20 +69,25 @@ contract OlympusProOptionFactory is
         // |||||||||||||  CHECK  |||||||||||||||
         bytes32 salt;
         {
+            address short = address(short_);
             address base = address(base_);
 
-            salt = getSalt(base_, marketId_, expiryTime_);
+            salt = getSalt(marketId, short_, base_, expiryTime_);
 
+            _checkDiffTokens(short, base);
+            _checkTokenNoAddressZero(short);
             _checkTokenNoAddressZero(base);
-            _checkPoolNotExist(getCallOptions[salt], base, expiryTime_);
+            _checkPoolNotExist(getCallOptions[salt], short, base, marketId_, expiryTime_);
         }
 
         // |||||||||||| EFFECT  |||||||||||||||
 
         bytes memory bytecode = type(OlympusProOption).creationCode;
 
+        bytes memory encodePacked = abi.encodePacked(bytecode, abi.encode(address(base_), address(short_), olympusPool, bondDepository, pokeMe, pokeMeResolver));
+
         assembly {
-            option := create2(0, add(bytecode, 32), mload(bytecode), salt)
+            option := create2(0, add(encodePacked, 32), mload(bytecode), salt)
         }
         getCallOptions[salt] = option;
         allOptions.push(option);
@@ -75,30 +95,21 @@ contract OlympusProOptionFactory is
         // |||||||||||| INTERACTION |||||||||||||
 
         OlympusProOption(option).initialize(
-            short_,
-            base_,
-            weth_,
-            expiryTime_,
-            strike_,
+            msg.sender,
+            marketId_,
             timeBeforeDeadLine_,
-            bcv_,
-            pokeMe,
-            pokeMeResolver
+            bcv_
         );
-        OptionPool(option).transferOwnership(msg.sender);
 
-        base_.safeTransferFrom(msg.sender, address(this), initialTotalSupply_);
-        base_.safeTransfer(option, initialTotalSupply_);
-
-        emit OptionPoolCreated(
+        emit OlympusProOptionCreated(
             salt,
             short_,
             base_,
+            marketId_,
             expiryTime_,
             strike_,
             timeBeforeDeadLine_,
-            bcv_,
-            initialTotalSupply_
+            bcv_
         );
     }
 
@@ -117,8 +128,9 @@ contract OlympusProOptionFactory is
     external
     returns(uint256[] memory liveMarkets_)
     {
-        require(address(bondDepository) != address(0), "!bondDepository");
+        require(bondDepository != address(0), "!bondDepository");
 
-        liveMarkets_ = bondDepository.liveMarkets();
+        IBondDepository bond = IBondDepository(bondDepository);
+        liveMarkets_ = bond.liveMarkets();
     }
 }

@@ -65,7 +65,7 @@ contract OlympusProOption is
         uint256 tokenId;
     }
 
-    /// @dev The market ID option data by user address
+    /// @dev options by tokenId
     mapping(uint256 => Option) private _options;
 
     /// @dev The ID of the next token that will be minted. Skips 0
@@ -75,20 +75,19 @@ contract OlympusProOption is
      * @notice Initializes the contract with immutable variables
      * @param baseToken_ is the asset used for collateral
      * @param quoteToken_ is the asset used for premiums and result asset
-     * @param factory_ is the option factory contract address
      * @param olympusPool_ is the Olympus pool address
      * @param bondDepository_ is the bonddepository address
      */
     constructor(
         address baseToken_,
         address quoteToken_,
-        address factory_,
         address olympusPool_,
-        address bondDepository_
+        address bondDepository_,        
+        IPokeMe pokeMe_,
+        IPokeMeResolver pokeMeResolver_
     ) {
         require(baseToken_ != address(0), "!baseToken_");
         require(quoteToken_ != address(0), "!quoteToken_");
-        require(factory_ != address(0), "!factory_");
         require(olympusPool_ != address(0), "!olympusPool_");
         require(bondDepository_ != address(0), "!bondDepository_");
 
@@ -97,6 +96,9 @@ contract OlympusProOption is
         olympusPool = olympusPool_;
         bondDepository = bondDepository_;
         totalFees = 0;
+
+        pokeMe = pokeMe_;
+        pokeMeResolver = pokeMeResolver_;
 
         // hardcode the initial exercise fee and settle fee
         instantFee = _wdiv(5, 10 ** 3);
@@ -113,9 +115,7 @@ contract OlympusProOption is
         address owner_,
         uint256 marketId_,
         uint256 timeBeforeDeadLine_,
-        uint256 bcv_,
-        IPokeMe pokeMe_,
-        IPokeMeResolver pokeMeResolver_
+        uint256 bcv_
     ) external initializer {
         require(owner_ != address(0), "!owner_");
         require(timeBeforeDeadLine_ != 0, "!timeBeforeDeadLine_");
@@ -132,9 +132,6 @@ contract OlympusProOption is
         _marketId = marketId_;
         _bcv = bcv_;
 
-        pokeMe = pokeMe_;
-        pokeMeResolver = pokeMeResolver_;
-
         timeBeforeDeadline = timeBeforeDeadLine_;
     }
 
@@ -146,18 +143,18 @@ contract OlympusProOption is
      * deadline is the option expiry time
      * strike is the price at which to exercise option
      */
-    function buy(BuyParams calldata params)
+    function buy(BuyParams calldata params_)
         external
         payable
         nonReentrant
-        checkExpiry(params.deadline, timeBeforeDeadline)
+        checkExpiry(params_.deadline, timeBeforeDeadline)
         returns (uint256 tokenId)
     {
-        require(params.notional != 0, "OlympusProOption::buy: !notional");
-        require(params.strike != 0, "OlympusProOption::buy: !strike");
+        require(params_.notional != 0, "OlympusProOption::buy: !notional");
+        require(params_.strike != 0, "OlympusProOption::buy: !strike");
 
         uint256 olympusBalance = olympusUnderlyingBalance();
-        uint256 debt = _wmul(params.notional, params.strike);
+        uint256 debt = _wmul(params_.notional, params_.strike);
         uint256 fee = maxFee(debt);
         totalFees += fee;
 
@@ -176,14 +173,14 @@ contract OlympusProOption is
         IERC20(underlying).safeTransferFrom(
             msg.sender,
             address(this),
-            getPremium(address(underlying), prime, params.notional)
+            getPremium(address(underlying), prime, params_.notional)
         );
         _safeMint(msg.sender, (tokenId = _nextId++));
 
         OptionParams memory opar = OptionParams({
-            notional: params.notional,
+            notional: params_.notional,
             recipient: msg.sender,
-            strike: params.strike,
+            strike: params_.strike,
             fee: fee,
             tokensWillReceived: debt,
             asset: asset,
@@ -194,19 +191,19 @@ contract OlympusProOption is
         _options[tokenId] = _createOption(opar);
     }
 
-    function _createOption(OptionParams memory params)
+    function _createOption(OptionParams memory params_)
         private
         returns (Option memory)
     {
         return
             Option({
-                notional: params.notional,
-                operator: params.recipient,
-                strike: params.strike,
-                deadline: params.deadline,
+                notional: params_.notional,
+                operator: params_.recipient,
+                strike: params_.strike,
+                deadline: params_.deadline,
                 createTime: _blockTimestamp(),
-                fee: params.fee,
-                tokensWillReceived: params.tokensWillReceived,
+                fee: params_.fee,
+                tokensWillReceived: params_.tokensWillReceived,
                 pokeMe: pokeMe.createTaskNoPrepayment(
                     address(this),
                     this.settle.selector,
@@ -214,11 +211,11 @@ contract OlympusProOption is
                     abi.encodeWithSelector(
                         IPokeMeResolver.checker.selector,
                         OptionSettlement({
-                            operator: params.recipient,
-                            tokenId: params.tokenId
+                            operator: params_.recipient,
+                            tokenId: params_.tokenId
                         })
                     ),
-                    params.underlying
+                    params_.underlying
                 ),
                 settled: false
             });
@@ -234,7 +231,19 @@ contract OlympusProOption is
         _burn(tokenId_);
     }
 
-    function settle(address operator_, uint256 tokenId_) public onlyPokeMe {
+    function isOptionExpired(uint256 tokenId_) external returns(bool) {
+        Option storage option = _options[tokenId_];
+
+        require(!option.settled, "already settled.");
+        uint256 currentTime = _blockTimestamp();
+        if(option.createTime + option.deadline + timeBeforeDeadline > currentTime)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    function settle(address operator_, uint256 tokenId_) external onlyPokeMe {
         Option storage option = _options[tokenId_];
 
         require(!option.settled, "already settled.");

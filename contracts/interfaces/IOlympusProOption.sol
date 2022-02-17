@@ -20,4 +20,7 @@ interface IOlympusProOption {
         uint256 tokensWillReceived;
         uint256 tokenId;
     }
+
+    function settle(address, uint256) external;
+    function exercise(uint256) external;
 }

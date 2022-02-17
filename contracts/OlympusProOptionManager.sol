@@ -98,9 +98,9 @@ contract OlympusProOptionManager is
         onlyManager
     {
         require(timeBeforeDeadLine_ != 0, "!timeBeforeDeadLine.");
-        uint oldTimeBeforeDeadLine = timeBeforeDeadLine;
+        uint oldTimeBeforeDeadLine = timeBeforeDeadline;
         emit TimeBeforeDeadLineSet(oldTimeBeforeDeadLine, timeBeforeDeadLine_);
-        timeBeforeDeadLine = timeBeforeDeadLine_;
+        timeBeforeDeadline = timeBeforeDeadLine_;
     }   
 
     /**
