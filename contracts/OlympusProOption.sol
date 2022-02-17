@@ -23,7 +23,12 @@ import {
     _omul,
     _odiv
 } from "./vendor/DSMath.sol";
-import "hardhat/console.sol";
+import {
+    Option,
+    OptionSettlement,
+    BuyParams,
+    OptionParams
+} from "./structs/SOption.sol";
 
 contract OlympusProOption is
     IOlympusProOption,
@@ -42,29 +47,6 @@ contract OlympusProOption is
     uint256 private _marketId;
     uint256 private _bcv;
 
-    // details about the Olympus pro option
-    struct Option {
-        // the option notional
-        uint256 notional;
-        // the option strike
-        uint256 strike;
-        // the address that is approved for spending this token
-        address operator;
-        // the fee
-        uint256 fee;
-        // how many tokens user will get
-        uint256 tokensWillReceived;
-        uint256 deadline;
-        uint256 createTime;
-        bytes32 pokeMe;
-        bool settled;
-    }
-
-    struct OptionSettlement {
-        address operator;
-        uint256 tokenId;
-    }
-
     /// @dev options by tokenId
     mapping(uint256 => Option) private _options;
 
@@ -82,7 +64,7 @@ contract OlympusProOption is
         address baseToken_,
         address quoteToken_,
         address olympusPool_,
-        address bondDepository_,        
+        address bondDepository_,
         IPokeMe pokeMe_,
         IPokeMeResolver pokeMeResolver_
     ) {
@@ -101,7 +83,7 @@ contract OlympusProOption is
         pokeMeResolver = pokeMeResolver_;
 
         // hardcode the initial exercise fee and settle fee
-        instantFee = _wdiv(5, 10 ** 3);
+        instantFee = _wdiv(5, 10**3);
     }
 
     /**
@@ -137,7 +119,7 @@ contract OlympusProOption is
 
     /**
      * @notice Buy the option.
-     * @param params mint parameter composed by :
+     * @param params_ mint parameter composed by :
      * recipient is the buyer of the contract who pay the premium
      * notional is the amount of quote token to spend
      * deadline is the option expiry time
@@ -186,7 +168,7 @@ contract OlympusProOption is
             asset: asset,
             underlying: underlying,
             tokenId: tokenId,
-            deadline: params.deadline
+            deadline: params_.deadline
         });
         _options[tokenId] = _createOption(opar);
     }
@@ -231,13 +213,15 @@ contract OlympusProOption is
         _burn(tokenId_);
     }
 
-    function isOptionExpired(uint256 tokenId_) external returns(bool) {
+    function isOptionExpired(uint256 tokenId_) external view returns (bool) {
         Option storage option = _options[tokenId_];
 
         require(!option.settled, "already settled.");
         uint256 currentTime = _blockTimestamp();
-        if(option.createTime + option.deadline + timeBeforeDeadline > currentTime)
-        {
+        if (
+            option.createTime + option.deadline + timeBeforeDeadline >
+            currentTime
+        ) {
             return true;
         }
         return false;
@@ -255,7 +239,6 @@ contract OlympusProOption is
 
     function exercise(uint256 tokenId_)
         external
-        payable
         isAuthorizedForToken(tokenId_)
     {
         Option storage option = _options[tokenId_];
@@ -323,6 +306,10 @@ contract OlympusProOption is
         if (decimals == 8) return _omul(_prime, _notional);
 
         revert("OlympusProOption::getPremium: unsupported token precision.");
+    }
+
+    function options(uint256 tokenId_) external view returns (Option memory) {
+        return _options[tokenId_];
     }
 
     modifier onlyPokeMe() {

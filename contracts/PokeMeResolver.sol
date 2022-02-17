@@ -3,7 +3,8 @@
 pragma solidity 0.8.10;
 
 import {IOlympusProOption} from "./interfaces/IOlympusProOption.sol";
-
+import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
+import {Option} from "./structs/SOption.sol";
 
 contract PokeMeResolver is IPokeMeResolver {
     function checker(SettleParams memory params_)

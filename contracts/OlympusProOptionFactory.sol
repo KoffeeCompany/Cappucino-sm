@@ -11,10 +11,25 @@ import {
 import {
     OwnableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {
+    OlympusProOption
+} from "./OlympusProOption.sol";
 import { IBondDepository } from "./interfaces/Olympus/IBondDepository.sol";
 import { IOlympusProOptionFactory } from "./interfaces/IOlympusProOptionFactory.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
+import {
+    IERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    _checkDiffTokens,
+    _checkTokenNoAddressZero,
+    _checkPoolNotExist
+} from "./checks/CheckFunctions.sol";
+import {
+    _getSalt
+} from "./functions/FOlympusProOptionFactory.sol";
+
 
 contract OlympusProOptionFactory is 
     IOlympusProOptionFactory,
@@ -39,7 +54,7 @@ contract OlympusProOptionFactory is
         bytes32 salt,
         IERC20 indexed short,
         IERC20 indexed base,
-        uing256 marketId,
+        uint256 marketId,
         uint256 expiryTime,
         uint256 strike,
         uint256 timeBeforeDeadLine,
@@ -72,7 +87,7 @@ contract OlympusProOptionFactory is
             address short = address(short_);
             address base = address(base_);
 
-            salt = getSalt(marketId, short_, base_, expiryTime_);
+            salt = _getSalt(short_, base_, marketId_, expiryTime_);
 
             _checkDiffTokens(short, base);
             _checkTokenNoAddressZero(short);
@@ -111,14 +126,6 @@ contract OlympusProOptionFactory is
             timeBeforeDeadLine_,
             bcv_
         );
-    }
-
-    function getSalt(
-        IERC20 short_,
-        IERC20 base_,
-        uint256 expiryTime_
-    ) public pure returns (bytes32) {
-        return _getSalt(short_, base_, expiryTime_);
     }
 
     /**
