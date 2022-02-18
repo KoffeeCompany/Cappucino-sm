@@ -24,9 +24,10 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     args: [
       address.GELETHGUNILP,
       address.GEL,
-      (await ethers.getContract("OptionPoolFactory")).address,
       address.TreasuryV2,
       address.BondDepositoryV2,
+      address.PokeMe,
+      (await ethers.getContract("PokeMeResolver")).address,
     ],
     log: hre.network.name != "hardhat" ? true : false,
   });

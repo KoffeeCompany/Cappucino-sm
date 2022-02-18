@@ -40,14 +40,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     expect(owner).to.equal(await option.owner());
     await option.connect(user).setManager(user2Address);
@@ -61,14 +58,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     await option.connect(user).setManager(user2Address);
     await expect(option.connect(user2).setFee(0)).to.be.revertedWith(
@@ -82,14 +76,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     await option.connect(user).setManager(user2Address);
     await expect(
@@ -103,14 +94,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     await option.connect(user).setManager(user2Address);
     await option.connect(user2).setFee(ethers.utils.parseUnits("0.25", 18));
@@ -126,14 +114,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     await option.connect(user).setManager(user2Address);
     await expect(
@@ -146,14 +131,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     await expect(
       option.connect(user2).buy({
@@ -169,14 +151,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     await expect(
       option.connect(user2).buy({
@@ -192,14 +171,11 @@ describe("OlympusProOption", function () {
     const marketId = 0;
     const timeBeforeDeadLine = 3600 * 24; // 1 day
     const bcv = 2;
-    const pokeMe = getAddresses().PokeMe;
     await option.initialize(
       owner,
       marketId,
       timeBeforeDeadLine,
-      bcv,
-      pokeMe,
-      pokeMeResolver.address
+      bcv
     );
     await expect(
       option.connect(user2).buy({

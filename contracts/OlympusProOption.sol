@@ -108,9 +108,6 @@ contract OlympusProOption is
         transferOwnership(owner_);
         __ERC721_init("Olympus Option NFT-V1", "OHM-OPT");
 
-        // hardcode the initial exercise fee and settle fee
-        instantFee = _wdiv(5, 1000);
-
         _marketId = marketId_;
         _bcv = bcv_;
 
@@ -203,12 +200,10 @@ contract OlympusProOption is
             });
     }
 
-    function burn(uint256 tokenId_)
-        external
-        payable
+    function _deleteAndBurn(uint256 tokenId_)
+        private
         isAuthorizedForToken(tokenId_)
     {
-        Option storage option = _options[tokenId_];
         delete _options[tokenId_];
         _burn(tokenId_);
     }
@@ -231,6 +226,7 @@ contract OlympusProOption is
         Option storage option = _options[tokenId_];
 
         require(!option.settled, "already settled.");
+        _deleteAndBurn(tokenId_);
 
         option.settled = true;
         pokeMe.cancelTask(option.pokeMe);
@@ -244,6 +240,8 @@ contract OlympusProOption is
         Option storage option = _options[tokenId_];
 
         require(!option.settled, "already settled.");
+        _deleteAndBurn(tokenId_);
+        
         option.settled = true;
 
         require(

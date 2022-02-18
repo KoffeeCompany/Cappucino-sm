@@ -11,7 +11,7 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     hre.network.name === "arbitrum"
   ) {
     console.log(
-      `Deploying OptionPoolFactory to ${hre.network.name}. Hit ctrl + c to abort`
+      `Deploying OlympusProOptionFactory to ${hre.network.name}. Hit ctrl + c to abort`
     );
     await sleep(10000);
   }
@@ -19,7 +19,7 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
   const address = getAddresses();
-  await deploy("OptionPoolFactory", {
+  await deploy("OlympusProOptionFactory", {
     from: deployer,
     proxy: {
       owner: deployer,
@@ -27,6 +27,8 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     args: [
       address.PokeMe,
       (await ethers.getContract("PokeMeResolver")).address,
+      address.BondDepositoryV2,
+      address.TreasuryV2,
     ],
     log: hre.network.name != "hardhat" ? true : false,
   });
@@ -41,5 +43,5 @@ func.skip = async (hre: HardhatRuntimeEnvironment) => {
     hre.network.name === "arbitrum";
   return shouldSkip ? true : false;
 };
-func.tags = ["OptionPoolFactory"];
+func.tags = ["OlympusProOptionFactory"];
 func.dependencies = ["PokeMeResolver"];
