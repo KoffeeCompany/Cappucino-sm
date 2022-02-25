@@ -2,18 +2,20 @@
 pragma solidity 0.8.10;
 
 import {IOlympusProOption} from "./interfaces/IOlympusProOption.sol";
-import {OlympusProOptionManager} from "./OlympusProOptionManager.sol";
+import {OlympusProPoolManager} from "./OlympusProPoolManager.sol";
 import {
     IERC20,
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import {BlockTimestamp} from "./bases/BlockTimestamp.sol";
-import {ExpiryValidation} from "./bases/ExpiryValidation.sol";
 import {IBondDepository} from "./interfaces/Olympus/IBondDepository.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
+import { IOlympusProOptionFactory } from "./interfaces/IOlympusProOptionFactory.sol";
+import { OlympusProPool } from "./OlympusProPool.sol";
 import {
     _add,
     _wmul,
@@ -27,91 +29,95 @@ import {
     Option,
     OptionSettlement,
     BuyParams,
-    OptionParams
+    OptionParams,
+    MarketParams
 } from "./structs/SOption.sol";
+import {
+    Terms,
+    PoolCreationParams
+} from "./structs/SPool.sol";
+import "./bases/PoolAddress.sol";
 
 contract OlympusProOption is
     IOlympusProOption,
     BlockTimestamp,
-    ExpiryValidation,
-    OlympusProOptionManager
+    ERC721Upgradeable,
+    OlympusProPoolManager
 {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
-    address public immutable olympusPool;
-    address public immutable bondDepository;
+    address public immutable factory;
     IPokeMe public pokeMe;
     IPokeMeResolver public pokeMeResolver;
 
-    uint256 private _marketId;
-    uint256 private _bcv;
-
     /// @dev options by tokenId
     mapping(uint256 => Option) private _options;
+
+    /// @dev tokenId to poolId
+    mapping(uint256 => uint256) private _tokenIdToPoolId;
 
     /// @dev The ID of the next token that will be minted. Skips 0
     uint176 private _nextId = 1;
 
     /**
      * @notice Initializes the contract with immutable variables
-     * @param baseToken_ is the asset used for collateral
-     * @param quoteToken_ is the asset used for premiums and result asset
-     * @param olympusPool_ is the Olympus pool address
-     * @param bondDepository_ is the bonddepository address
+     * @param factory_ is the factory address
+     * @param pokeMe_ is the pokeMe instance
+     * @param pokeMeResolver_ is the pokeMe resolver
      */
     constructor(
-        address baseToken_,
-        address quoteToken_,
-        address olympusPool_,
-        address bondDepository_,
+        address factory_,
         IPokeMe pokeMe_,
         IPokeMeResolver pokeMeResolver_
     ) {
-        require(baseToken_ != address(0), "!baseToken_");
-        require(quoteToken_ != address(0), "!quoteToken_");
-        require(olympusPool_ != address(0), "!olympusPool_");
-        require(bondDepository_ != address(0), "!bondDepository_");
-
-        asset = quoteToken_;
-        underlying = baseToken_;
-        olympusPool = olympusPool_;
-        bondDepository = bondDepository_;
-        totalFees = 0;
+        require(factory_ != address(0), "!factory_");
+        require(address(pokeMe_) != address(0), "!pokeMe_");
+        require(address(pokeMeResolver_) != address(0), "!pokeMeResolver_");
 
         pokeMe = pokeMe_;
         pokeMeResolver = pokeMeResolver_;
-
-        // hardcode the initial exercise fee and settle fee
-        instantFee = _wdiv(5, 10**3);
+        factory = factory_;
     }
 
     /**
-     * @notice Initializes the contract with storage variables.
-     * @param owner_ is the owner of the contract who can set the manager
-     * @param marketId_ is the ID of the market
-     * @param timeBeforeDeadLine_ is the option limit time
-     * @param bcv_ is the bcv factor
+     * @notice Initializes the contract
      */
-    function initialize(
-        address owner_,
-        uint256 marketId_,
-        uint256 timeBeforeDeadLine_,
-        uint256 bcv_
-    ) external initializer {
-        require(owner_ != address(0), "!owner_");
-        require(timeBeforeDeadLine_ != 0, "!timeBeforeDeadLine_");
-        require(bcv_ != 0, "!bcv_");
-
+    function initialize() external initializer {
         __ReentrancyGuard_init();
         __Ownable_init();
-        transferOwnership(owner_);
+        transferOwnership(msg.sender);
         __ERC721_init("Olympus Option NFT-V1", "OHM-OPT");
+    }
 
-        _marketId = marketId_;
-        _bcv = bcv_;
+    function createMarket(MarketParams calldata params_)
+    external nonReentrant returns (address pool, uint256 poolId)
+    {  
+        require(params_.capacity != 0, "!capacity");
+        require(params_.maxPayout != 0, "!maxPayout");
+        require(params_.owner != address(0), "!owner");
+        require(params_.treasury != address(0), "!treasury");
+        require(params_.token0 != address(0), "!token0");
+        require(params_.token1 != address(0), "!token1");
+        require(params_.timeBeforeDeadline != 0, "!timeBeforeDeadline");
+        require(params_.bcv != 0, "!bcv");
+        require(params_.fee != 0, "!fee");
 
-        timeBeforeDeadline = timeBeforeDeadLine_;
+        require(getPool[params_.token0][params_.token1][params_.owner] == address(0), "market already exists");
+
+        (pool, poolId) = createPool(
+            PoolCreationParams({
+                token0: params_.token0,
+                token1: params_.token1,
+                owner: params_.owner,
+                treasury: params_.treasury,
+                capacity: params_.capacity,
+                maxPayout: params_.maxPayout,
+                timeBeforeDeadline: params_.timeBeforeDeadline,
+                bcv: params_.bcv,
+                fee: params_.fee
+            })
+        );
     }
 
     /**
@@ -122,52 +128,56 @@ contract OlympusProOption is
      * deadline is the option expiry time
      * strike is the price at which to exercise option
      */
-    function buy(BuyParams calldata params_)
+    function buyCall(BuyParams calldata params_)
         external
         payable
         nonReentrant
-        checkExpiry(params_.deadline, timeBeforeDeadline)
         returns (uint256 tokenId)
     {
         require(params_.notional != 0, "OlympusProOption::buy: !notional");
         require(params_.strike != 0, "OlympusProOption::buy: !strike");
+        require(params_.poolId != 0, "Invalid pool ID");
+        require(params_.deadline != 0, "!deadline");
+        require(params_.recipient != address(0), "!recipient");
+           
+        Terms memory poolTerms = _poolIdToTerms[params_.poolId];
+        require(poolTerms.token0 != address(0), "!token0");
+        require(poolTerms.token1 != address(0), "!token1");
+        require(_blockTimestamp() + poolTerms.timeBeforeDeadline <= params_.deadline, "Transaction too old");
+        address poolAddress = _pools[params_.poolId];
+        require(poolAddress != address(0), "!poolAddress");
+        OlympusProPool pool = OlympusProPool(poolAddress);
 
-        uint256 olympusBalance = olympusUnderlyingBalance();
+        uint256 treasuryBalance = pool.balance1();
         uint256 debt = _wmul(params_.notional, params_.strike);
-        uint256 fee = maxFee(debt);
-        totalFees += fee;
+        uint256 fee = _maxFee(pool.instantFee(), debt);
 
-        require(debt + fee <= olympusBalance, "debt + fee > olympusBalance.");
-        // lock the return amount from olympus pool
-        IERC20(underlying).safeTransferFrom(
-            olympusPool,
-            address(this),
-            _add(debt, fee)
-        );
+        require(debt + fee <= treasuryBalance, "debt + fee > treasuryBalance.");
+        address underlying = pool.token1();
+        // lock the return amount from treasury pool
+        pool.lockTreasuryAmount1(address(this), debt, fee);
 
         // lock the premium amount from the user
         // TODO check if prime has notional precision.
         // Should be set that way during initialization?
-        uint256 prime = prime();
-        IERC20(underlying).safeTransferFrom(
-            msg.sender,
-            address(this),
-            getPremium(address(underlying), prime, params_.notional)
-        );
-        _safeMint(msg.sender, (tokenId = _nextId++));
+        uint256 prime = prime(pool.debtRatio(), poolTerms.bcv);
+        pool.getPrimeAmount1(params_.recipient, address(this), prime, params_.notional);
+        _safeMint(params_.recipient, (tokenId = _nextId++));
 
         OptionParams memory opar = OptionParams({
+            poolId: params_.poolId,
             notional: params_.notional,
-            recipient: msg.sender,
+            recipient: params_.recipient,
             strike: params_.strike,
             fee: fee,
             tokensWillReceived: debt,
-            asset: asset,
-            underlying: underlying,
+            asset: poolTerms.token0,
+            underlying: poolTerms.token1,
             tokenId: tokenId,
             deadline: params_.deadline
         });
         _options[tokenId] = _createOption(opar);
+        _tokenIdToPoolId[tokenId] = params_.poolId;
     }
 
     function _createOption(OptionParams memory params_)
@@ -176,6 +186,7 @@ contract OlympusProOption is
     {
         return
             Option({
+                poolId: params_.poolId,
                 notional: params_.notional,
                 operator: params_.recipient,
                 strike: params_.strike,
@@ -202,19 +213,116 @@ contract OlympusProOption is
 
     function _deleteAndBurn(uint256 tokenId_)
         private
-        isAuthorizedForToken(tokenId_)
     {
         delete _options[tokenId_];
         _burn(tokenId_);
+    }
+
+    function settle(address operator_, uint256 tokenId_) external onlyPokeMe {
+        Option storage option = _options[tokenId_];
+        require(!option.settled, "already settled.");
+        
+        option.settled = true;
+        
+        uint256 poolId = _tokenIdToPoolId[tokenId_];
+        require(poolId != 0, "!poolId");
+
+        address poolAddress = _pools[poolId];
+        require(poolAddress != address(0), "!poolAddress");
+        OlympusProPool pool = OlympusProPool(poolAddress);
+        _deleteAndBurn(tokenId_);
+
+        pokeMe.cancelTask(option.pokeMe);
+        pool.unlockTreasuryAmount1(address(this), option.tokensWillReceived);
+    }
+
+    function exercise(uint256 tokenId_)
+        external onlyOptionOwner(tokenId_)
+    {
+        Option storage option = _options[tokenId_];
+        require(!option.settled, "already settled.");
+        
+        option.settled = true;
+
+        uint256 poolId = _tokenIdToPoolId[tokenId_];
+        require(poolId != 0, "!poolId");
+
+        address poolAddress = _pools[poolId];
+        require(poolAddress != address(0), "!poolAddress");
+        OlympusProPool pool = OlympusProPool(poolAddress);
+        _deleteAndBurn(tokenId_);
+
+        require(
+            option.createTime + option.deadline < _blockTimestamp(),
+            "not expired."
+        );
+
+        Terms memory poolTerms = _poolIdToTerms[poolId];
+        require(poolTerms.token0 != address(0), "!token0");
+        require(poolTerms.token1 != address(0), "!token1");
+        require(
+            option.createTime + option.deadline + poolTerms.timeBeforeDeadline >
+                _blockTimestamp(),
+            "deadline reached."
+        );
+
+        pokeMe.cancelTask(option.pokeMe);
+
+        pool.getAssetNotional(msg.sender, option.notional);
+        pool.payTokensWillReceived(address(this), msg.sender, option.tokensWillReceived);
+    }
+
+    /**
+     * @notice Returns the maximum fee between the settlement and the exercise.
+     */
+    function _maxFee(uint256 instantFee_, uint256 debt_) private view returns (uint256 fee) {   
+        require(instantFee_ != 0, "!instantFee_");
+        require(debt_ != 0, "!debt_");
+        uint256 fee = 0;
+        if (instantFee_ != 0) {
+            fee = _wmul(debt_, instantFee_);
+        }
+        require(fee >= 0, "fee detected is negative.");
+    }    
+
+    function getCumulatedFees(uint256 poolId_) external onlyManager {
+        require(
+            feeRecipient != address(0),
+            "fee recipient address is not configured."
+        );        
+        require(poolId_ != 0, "Invalid pool ID");
+           
+        address poolAddress = _pools[poolId_];
+        require(poolAddress != address(0), "!poolAddress");
+        OlympusProPool pool = OlympusProPool(poolAddress);
+        pool.getCumulatedFees(address(this), feeRecipient);
+    }
+
+    /**
+     * @notice Returns the prime by market id.
+     */
+    function prime(uint256 debtRatio_, uint256 bcv_) public pure returns (uint256 prime) {
+        prime = _wmul(debtRatio_, bcv_);
+    }
+
+    function options(uint256 tokenId_) external view returns (Option memory) {
+        return _options[tokenId_];
     }
 
     function isOptionExpired(uint256 tokenId_) external view returns (bool) {
         Option storage option = _options[tokenId_];
 
         require(!option.settled, "already settled.");
+        uint256 poolId = _tokenIdToPoolId[tokenId_];
+        
+           
+        Terms memory poolTerms = _poolIdToTerms[poolId];
+        require(poolTerms.token0 != address(0), "!token0");
+        require(poolTerms.token1 != address(0), "!token1");
+
         uint256 currentTime = _blockTimestamp();
         if (
-            option.createTime + option.deadline + timeBeforeDeadline >
+            option.createTime + option.deadline + poolTerms.timeBeforeDeadline >
             currentTime
         ) {
             return true;
@@ -222,96 +330,14 @@ contract OlympusProOption is
         return false;
     }
 
-    function settle(address operator_, uint256 tokenId_) external onlyPokeMe {
-        Option storage option = _options[tokenId_];
-
-        require(!option.settled, "already settled.");
-        _deleteAndBurn(tokenId_);
-
-        option.settled = true;
-        pokeMe.cancelTask(option.pokeMe);
-        IERC20(underlying).safeTransfer(olympusPool, option.tokensWillReceived);
-    }
-
-    function exercise(uint256 tokenId_)
-        external
-        isAuthorizedForToken(tokenId_)
-    {
-        Option storage option = _options[tokenId_];
-
-        require(!option.settled, "already settled.");
-        _deleteAndBurn(tokenId_);
-        
-        option.settled = true;
-
-        require(
-            option.createTime + option.deadline < _blockTimestamp(),
-            "not expired."
-        );
-
-        require(
-            option.createTime + option.deadline + timeBeforeDeadline >
-                _blockTimestamp(),
-            "deadline reached."
-        );
-
-        pokeMe.cancelTask(option.pokeMe);
-
-        IERC20(asset).safeTransferFrom(
-            msg.sender,
-            olympusPool,
-            option.notional
-        );
-        IERC20(underlying).safeTransfer(msg.sender, option.tokensWillReceived);
-    }
-
-    /**
-     * @notice Returns the underlying balance on the olympus pool.
-     */
-    function olympusUnderlyingBalance() public view returns (uint256) {
-        return IERC20(underlying).balanceOf(olympusPool);
-    }
-
-    /**
-     * @notice Returns the maximum fee between the settlement and the exercise.
-     */
-    function maxFee(uint256 debt_) public view returns (uint256 fee) {
-        uint256 fee = 0;
-        if (instantFee != 0) {
-            fee = _wmul(debt_, instantFee);
-        }
-        require(fee >= 0, "fee detected is negative.");
-    }
-
-    /**
-     * @notice Returns the prime by market id.
-     */
-    function prime() public view returns (uint256 prime) {
-        IBondDepository bond = IBondDepository(bondDepository);
-        uint256 debtRatio = bond.debtRatio(_marketId);
-        prime = _wmul(debtRatio, _bcv);
-    }
-
-    function getPremium(
-        address _token,
-        uint256 _prime,
-        uint256 _notional
-    ) internal view returns (uint256 premium) {
-        uint8 decimals = ERC20(_token).decimals();
-
-        if (decimals == 18) return _wmul(_prime, _notional);
-        if (decimals == 6) return _smul(_prime, _notional);
-        if (decimals == 8) return _omul(_prime, _notional);
-
-        revert("OlympusProOption::getPremium: unsupported token precision.");
-    }
-
-    function options(uint256 tokenId_) external view returns (Option memory) {
-        return _options[tokenId_];
-    }
-
     modifier onlyPokeMe() {
         require(msg.sender == address(pokeMe), "only pokeMe");
+        _;
+    }
+
+    modifier onlyOptionOwner(uint256 tokenId_) {  
+        Option storage option = _options[tokenId_];
+        require(msg.sender == option.operator, "only option owner");
         _;
     }
 }

@@ -11,25 +11,27 @@ import {
 import {
     OwnableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {
-    OlympusProOption
-} from "./OlympusProOption.sol";
-import { IBondDepository } from "./interfaces/Olympus/IBondDepository.sol";
 import { IOlympusProOptionFactory } from "./interfaces/IOlympusProOptionFactory.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
+import {IOlympusProOption} from "./interfaces/IOlympusProOption.sol";
+import {OlympusProOption} from "./OlympusProOption.sol";
 import {
     IERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {
-    _checkDiffTokens,
-    _checkTokenNoAddressZero,
-    _checkPoolNotExist
-} from "./checks/CheckFunctions.sol";
+    MarketParams
+} from "./structs/SOption.sol";
+import {
+    BuyParams,
+    MarketParams
+} from "./structs/SOption.sol";
 import {
     _getSalt
 } from "./functions/FOlympusProOptionFactory.sol";
-
+import {
+    _wdiv
+} from "./vendor/DSMath.sol";
 
 contract OlympusProOptionFactory is 
     IOlympusProOptionFactory,
@@ -40,104 +42,108 @@ contract OlympusProOptionFactory is
         
     IPokeMe public immutable pokeMe;
     IPokeMeResolver public immutable pokeMeResolver;
-    address public immutable bondDepository;
-    address public immutable olympusPool;
 
-    // !!!!!!!!!!!!!!!! DONT CHANGE ORDER !!!!!!!!!!!!!!!!!
-    mapping(bytes32 => address) public getCallOptions;
-    address[] public allOptions;
-    // ADD new mutable properties here.
+    IOlympusProOption public immutable optionManager;
+
+    mapping(bytes32 => uint256) public markets;
+
+    uint256 public timeBeforeDeadline;
+    uint256 public fee;
 
     // !!!!!!!!!!! EVENTS !!!!!!!!!!!!!!
 
     event OlympusProOptionCreated(
-        bytes32 salt,
-        IERC20 indexed short,
-        IERC20 indexed base,
         uint256 marketId,
         uint256 expiryTime,
         uint256 strike,
-        uint256 timeBeforeDeadLine,
-        uint256 bcv
+        uint256 notional
     );
 
     constructor(IPokeMe pokeMe_, 
-        IPokeMeResolver pokeMeResolver_, 
-        address bondDepository_,
-        address olympusPool_
+        IPokeMeResolver pokeMeResolver_
     ) {
         pokeMe = pokeMe_;
         pokeMeResolver = pokeMeResolver_;
-        bondDepository = bondDepository_;
-        olympusPool = olympusPool_;
-    }
+        optionManager = new OlympusProOption(address(this), pokeMe, pokeMeResolver);
 
-    function createCallOption(
-        IERC20 short_,
-        IERC20 base_,
-        uint256 marketId_,
-        uint256 timeBeforeDeadLine_,
-        uint256 expiryTime_,
-        uint256 strike_,
-        uint256 bcv_
-    ) external returns (address option) {
-        // |||||||||||||  CHECK  |||||||||||||||
-        bytes32 salt;
-        {
-            address short = address(short_);
-            address base = address(base_);
-
-            salt = _getSalt(short_, base_, marketId_, expiryTime_);
-
-            _checkDiffTokens(short, base);
-            _checkTokenNoAddressZero(short);
-            _checkTokenNoAddressZero(base);
-            _checkPoolNotExist(getCallOptions[salt], short, base, marketId_, expiryTime_);
-        }
-
-        // |||||||||||| EFFECT  |||||||||||||||
-
-        bytes memory bytecode = type(OlympusProOption).creationCode;
-
-        bytes memory encodePacked = abi.encodePacked(bytecode, abi.encode(address(base_), address(short_), olympusPool, bondDepository, pokeMe, pokeMeResolver));
-
-        assembly {
-            option := create2(0, add(encodePacked, 32), mload(bytecode), salt)
-        }
-        getCallOptions[salt] = option;
-        allOptions.push(option);
-
-        // |||||||||||| INTERACTION |||||||||||||
-
-        OlympusProOption(option).initialize(
-            msg.sender,
-            marketId_,
-            timeBeforeDeadLine_,
-            bcv_
-        );
-
-        emit OlympusProOptionCreated(
-            salt,
-            short_,
-            base_,
-            marketId_,
-            expiryTime_,
-            strike_,
-            timeBeforeDeadLine_,
-            bcv_
-        );
+        fee = _wdiv(5, 10**3);
+        timeBeforeDeadline = 3600 * 24; // 1 day
     }
 
     /**
-     * @notice get all live markets
+     * @notice Initializes the contract
      */
-    function liveMarkets()
-    external
-    returns(uint256[] memory liveMarkets_)
-    {
-        require(bondDepository != address(0), "!bondDepository");
+    function initialize() external initializer {
+        __ReentrancyGuard_init();
+        __Ownable_init();
+        transferOwnership(msg.sender);
+    }
 
-        IBondDepository bond = IBondDepository(bondDepository);
-        liveMarkets_ = bond.liveMarkets();
+    function createMarket(
+        uint256 capacity_,
+        uint256 maxPayout_,
+        address treasury_,
+        address token0_,
+        address token1_,
+        uint256 bcv_) 
+    external nonReentrant returns(uint256) {
+        require(capacity_ != 0, "!capacity");
+        require(maxPayout_ != 0, "!maxPayout");
+        require(treasury_ != address(0), "!treasury");
+        require(token0_ != address(0), "!token0");
+        require(token1_ != address(0), "!token1");
+        require(token0_ != token1_, "token0 == token1");
+        require(token1_ != address(0), "!token1");
+        require(bcv_ != 0, "!bcv");
+
+        bytes32 salt = _getSalt(token0_, token1_, msg.sender);
+        require(markets[salt] == 0, "market already exists");
+
+        address pool;
+        uint256 poolId;
+        (pool, poolId) = optionManager.createMarket(
+            MarketParams({
+                capacity : capacity_,
+                maxPayout : maxPayout_,
+                treasury : treasury_,
+                owner : msg.sender,
+                token0 : token0_,
+                token1 : token1_,
+                fee: fee,
+                timeBeforeDeadline : timeBeforeDeadline,
+                bcv : bcv_
+            }));
+        markets[salt] = poolId;
+        
+        return poolId;
+    }
+
+    function buyCall(
+        uint256 marketId_,
+        uint256 expiryTime_,
+        uint256 strike_,
+        uint256 notional_
+    ) external returns (uint256 optionId) {
+
+        require(marketId_ != 0, "!marketId");
+        require(expiryTime_ != 0, "!expiryTime");
+        require(strike_ != 0, "!strike");
+        require(notional_ != 0, "!notional");
+
+        optionId = optionManager.buyCall(
+            BuyParams({
+                poolId : marketId_,
+                notional : notional_,
+                strike : strike_,
+                recipient : msg.sender,
+                deadline : expiryTime_
+            }));
+
+        emit OlympusProOptionCreated(
+            marketId_,
+            expiryTime_,
+            strike_,
+            notional_
+        );
     }
 }
