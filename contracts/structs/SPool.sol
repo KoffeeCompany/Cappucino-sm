@@ -1,16 +1,16 @@
-// SPDX-License-Identifier: GPL-3.0
-pragma solidity 0.8.10;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.12;
 
 struct Parameters {
     address factory;
-    address token0;
-    address token1;
+    address quote;
+    address base;
     address owner;
 }
 
 struct PoolCreationParams {
-    address token0;
-    address token1;
+    address quote;
+    address base;
     address owner;
     address treasury;
     uint256 capacity;
@@ -22,8 +22,8 @@ struct PoolCreationParams {
 
 struct Terms {
     address owner;
-    address token0;
-    address token1;
+    address quote;
+    address base;
     uint256 fee;
     uint256 timeBeforeDeadline;
     uint256 bcv;

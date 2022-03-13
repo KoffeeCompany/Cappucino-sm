@@ -1,6 +1,6 @@
 
-// SPDX-License-Identifier: GPL-3.0
-pragma solidity 0.8.10;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.12;
 
 // solhint-disable
 function _add(uint256 x, uint256 y) pure returns (uint256 z) {
@@ -112,5 +112,14 @@ function _omul(uint256 x, uint256 y) pure returns (uint256 z) {
 //rounds to zero if x*y < OCTO / 2
 function _odiv(uint256 x, uint256 y) pure returns (uint256 z) {
     z = _add(_mul(x, OCTO), y / 2) / y;
+}
+
+function _xmul(uint256 x, uint256 y, uint8 _decimals) pure returns (uint256 z) {
+    uint256 X = 10**_decimals;
+    z = _add(_mul(x, y), X / 2) / X;
+}
+
+function _xdiv(uint256 x, uint256 y, uint8 _decimals) pure returns (uint256 z) {
+     z = _add(_mul(x, 10**_decimals), y / 2) / y;
 }
 
