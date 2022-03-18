@@ -9,12 +9,15 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {
     Initializable
 } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {_wmul, _wdiv} from "./vendor/DSMath.sol";
+import {_wmul, _wdiv, _add} from "./vendor/DSMath.sol";
 import {Options, Option} from "./structs/SOption.sol";
 import {OptionCanSettle} from "./structs/SOptionResolver.sol";
 import {IPokeMe} from "./interfaces/IPokeMe.sol";
 import {IOptionPoolFactory} from "./interfaces/IOptionPoolFactory.sol";
 import {IPokeMeResolver} from "./IPokeMeResolver.sol";
+import {
+    _checkTokenNoAddressZero
+} from "./checks/CheckFunctions.sol";
 
 contract OptionPool is Ownable, Initializable {
     using SafeERC20 for IERC20;
@@ -22,6 +25,7 @@ contract OptionPool is Ownable, Initializable {
     //#region IMMUTABLE PROPERTIES
     IERC20 public short;
     IERC20 public base;
+    IERC20 public weth;
     uint256 public expiryTime;
     uint256 public strike;
     //#endregion IMMUTABLE PROPERTIES
@@ -33,6 +37,15 @@ contract OptionPool is Ownable, Initializable {
 
     uint256 public debt; // Increase during creation / Decrease during exercise
     uint256 public debtRatio; //  Call Option Debt Outstanding / Total Supply
+
+    address private _receiver;
+    address private _feeReceiver; // fee receiver, should be the Koffee community wallet
+    uint256 private _feeRatio; // fee ratio
+    uint256 public totalFees; // cumulated fees
+
+    uint256 private _settleFeeDelta = 1; // by default we set it to 1
+    uint256 private _settleFeeAvg = 0; // by default we set it to 0
+    uint256 private _settleFeeCount = 0;
 
     mapping(address => Options) public optionsByReceiver;
 
@@ -55,6 +68,14 @@ contract OptionPool is Ownable, Initializable {
         require(
             msg.sender == address(pokeMe),
             "OptionPool::onlyPokeMe: only pokeMe"
+        );
+        _;
+    }
+
+    modifier onlyReceiver() {        
+        require(
+            msg.sender == _receiver,
+            "OptionPool::onlyReceiver: only receiver"
         );
         _;
     }
@@ -101,6 +122,7 @@ contract OptionPool is Ownable, Initializable {
 
     constructor() Ownable() {
         optionPoolFactory = IOptionPoolFactory(msg.sender);
+        _receiver = msg.sender;
     }
 
     // !!!!!!!!!!!!! CONSTRUCTOR !!!!!!!!!!!!!!!!
@@ -108,6 +130,7 @@ contract OptionPool is Ownable, Initializable {
     function initialize(
         IERC20 short_,
         IERC20 base_,
+        IERC20 weth_,
         uint256 expiryTime_,
         uint256 strike_,
         uint256 timeBeforeDeadLine_,
@@ -127,6 +150,7 @@ contract OptionPool is Ownable, Initializable {
         bcv = bcv_;
         pokeMe = pokeMe_;
         pokeMeResolver = pokeMeResolver_;
+        weth = weth_;
 
         emit LogOptionPool(
             address(this),
@@ -159,18 +183,49 @@ contract OptionPool is Ownable, Initializable {
 
     //#endregion ONLY ADMIN
 
+    //#region ONLY RECEIVER  
+
+    function setFeeReceiver(address feeReceiver_) external onlyReceiver {
+        _feeReceiver = feeReceiver_;
+    }
+
+    function setFeeRatio(uint256 feeRatio_) external onlyReceiver {
+        _feeRatio = feeRatio_;
+    } 
+
+    function setSettleFeeDelta(uint256 settleFeeDelta_) external onlyReceiver {
+        _settleFeeDelta = settleFeeDelta_;
+    }
+
+    function getFees() external onlyReceiver {
+        require(totalFees > 0, "OptionPool::getFees: no fees.");
+        require(_feeReceiver != address(0), "OptionPool::getFees: fee receiver address is not configured.");
+        base.safeTransferFrom(address(this), _feeReceiver, totalFees);
+        totalFees = 0;
+    }
+    //#endregion ONLY RECEIVER
+
+    function getSettleFees() public view returns (uint256) {
+        require(_settleFeeDelta > 0, "OptionPool::getSettleFees: no delta set.");  
+        return _wmul(_settleFeeDelta, _settleFeeAvg);  
+    }
+
     function getPrice(uint256 amount_) public view returns (uint256) {
         return _wmul(_wmul(bcv, debtRatio), amount_);
     }
 
     //#region USER FUNCTIONS CREATE EXERCISE
 
+    // user buy option
     function create(uint256 notional_, address receiver_) external {
         address pool = address(this);
         Options storage options = optionsByReceiver[receiver_];
 
+        uint256 previewSettleFee = getSettleFees();
+
         Option memory option = Option({
             notional: notional_,
+            previewSettleFee: previewSettleFee,
             receiver: receiver_,
             price: getPrice(notional_),
             startTime: block.timestamp,
@@ -199,7 +254,16 @@ contract OptionPool is Ownable, Initializable {
         debt += notional_;
         debtRatio = _wdiv(debt, baseBalance);
 
-        require(debt <= baseBalance, "OptionPool::create: debt > baseBalance.");
+        uint256 fee = 0;
+        if(_feeRatio != 0){
+            _checkTokenNoAddressZero(_feeReceiver);
+            fee = _wmul(notional_, _feeRatio);
+        }
+
+        require(fee >= 0, "OptionPool::create: fee detected is negative.");
+        totalFees += fee;
+        // add the fee into the debt and see if the protocol has enough as balance
+        require(debt + totalFees <= baseBalance, "OptionPool::create: debt + totalFees > baseBalance.");
 
         uint256 balanceB = short.balanceOf(pool);
 
@@ -207,13 +271,18 @@ contract OptionPool is Ownable, Initializable {
 
         assert(balanceB + option.price == short.balanceOf(pool));
 
+        // stack the settle fee
+        uint256 balanceW = weth.balanceOf(pool);
+        weth.safeTransferFrom(msg.sender, pool, previewSettleFee); // should i use msg.sender or receiver ??
+        assert(balanceW + previewSettleFee == weth.balanceOf(pool));
+
         emit LogCreateOption(
             pool,
             options.nextID,
             address(short),
             address(base),
-            notional_,
-            _wmul(strike, notional_),
+            option.notional,
+            _wmul(strike, option.notional),
             option.price
         );
     }
@@ -249,6 +318,9 @@ contract OptionPool is Ownable, Initializable {
         short.safeTransferFrom(msg.sender, pool, amountIn);
         base.safeTransfer(msg.sender, option.notional);
 
+        // payback the settleFee
+        weth.safeTransfer(msg.sender, option.previewSettleFee);
+
         assert(balanceB + amountIn == short.balanceOf(pool));
 
         emit LogExerciseOption(pool, id_, amountIn);
@@ -264,10 +336,28 @@ contract OptionPool is Ownable, Initializable {
         option.settled = true;
         pokeMe.cancelTask(option.pokeMe);
 
+        uint256 settlementFee = 0; // we supposed it's the real settlement fee, I do like this because i don't know how pokeMe calculates it
+        _settleFeeAvg = _performSettleFeeAvg(_settleFeeAvg, settlementFee, _settleFeeCount);
+        _settleFeeCount++;
+        
+        // we could payback the difference
+        if(option.previewSettleFee > settlementFee)
+        {
+            weth.safeTransfer(msg.sender, option.previewSettleFee - settlementFee);
+        }
+
         emit LogSettle(address(this), id_, receiver_);
     }
 
     //#endregion USER FUNCTIONS CREATE EXERCISE
+
+    function _performSettleFeeAvg(
+        uint256 settleFeeAvg_, 
+        uint256 settleFee_, 
+        uint256 settleFeeCount_
+    ) private returns (uint256) {
+        return _wdiv(_add(_wmul(settleFeeAvg_, settleFeeCount_), settleFee_), settleFeeCount_+1);
+    }
 
     //#region VIEW FUNCTIONS
 
