@@ -34,6 +34,8 @@ function _imax(int256 x, int256 y) pure returns (int256 z) {
 uint256 constant WAD = 10**18;
 uint256 constant RAY = 10**27;
 uint256 constant QUA = 10**4;
+uint256 constant SEX = 10**6; /// @dev for stable coin like USDC or USDT.
+uint256 constant OCTO = 10**8; /// @dev for BTC.
 
 //rounds to zero if x*y < WAD / 2
 function _wmul(uint256 x, uint256 y) pure returns (uint256 z) {
@@ -91,3 +93,24 @@ function _qmul(uint256 x, uint256 y) pure returns (uint256 z) {
 function _qdiv(uint256 x, uint256 y) pure returns (uint256 z) {
     z = _add(_mul(x, QUA), y / 2) / y;
 }
+
+//rounds to zero if x*y < SEX / 2
+function _smul(uint256 x, uint256 y) pure returns (uint256 z) {
+    z = _add(_mul(x, y), SEX / 2) / SEX;
+}
+
+//rounds to zero if x*y < SEX / 2
+function _sdiv(uint256 x, uint256 y) pure returns (uint256 z) {
+    z = _add(_mul(x, SEX), y / 2) / y;
+}
+
+//rounds to zero if x*y < OCTO / 2
+function _omul(uint256 x, uint256 y) pure returns (uint256 z) {
+    z = _add(_mul(x, y), OCTO / 2) / OCTO;
+}
+
+//rounds to zero if x*y < OCTO / 2
+function _odiv(uint256 x, uint256 y) pure returns (uint256 z) {
+    z = _add(_mul(x, OCTO), y / 2) / y;
+}
+

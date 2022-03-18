@@ -2,42 +2,38 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity 0.8.10;
 
-import {OptionCanSettle} from "./structs/SOptionResolver.sol";
+import {IOlympusProOption} from "./interfaces/IOlympusProOption.sol";
+import {IPokeMeResolver} from "./interfaces/IPokeMeResolver.sol";
 import {Option} from "./structs/SOption.sol";
-import {IOptionPool} from "./IOptionPool.sol";
 
-
-contract PokeMeResolver {
-    function checker(OptionCanSettle memory optionCanSettle)
+contract PokeMeResolver is IPokeMeResolver {
+    function checker(SettleParams memory params_)
         public
         view
         returns (bool, bytes memory data)
     {
-        IOptionPool pool = IOptionPool(optionCanSettle.pool);
+        IOlympusProOption opo = IOlympusProOption(params_.optionAddress);
 
-        Option memory option = pool.optionsByReceiver(optionCanSettle.receiver
-        ).opts[optionCanSettle.id];
+        Option memory option = opo.options(params_.tokenId);
 
-        if (
-            option.startTime + pool.expiryTime() + pool.timeBeforeDeadLine() >
-            block.timestamp &&
+        if (opo.isOptionExpired(params_.tokenId) &&
             option.settled
         )
             return (
                 false,
                 abi.encodeWithSelector(
-                    IOptionPool.settle.selector,
-                    optionCanSettle.receiver,
-                    optionCanSettle.id
+                    IOlympusProOption.settle.selector,
+                    params_.operator,
+                    params_.tokenId
                 )
             );
 
         return (
             true,
             abi.encodeWithSelector(
-                IOptionPool.settle.selector,
-                optionCanSettle.receiver,
-                optionCanSettle.id
+                IOlympusProOption.settle.selector,
+                params_.operator,
+                params_.tokenId
             )
         );
     }

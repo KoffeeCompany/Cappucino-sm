@@ -7,7 +7,7 @@ pragma solidity 0.8.10;
 
 error InvalidTokens(address short, address base, bytes1 code);
 error InvalidTokenZero(address token, bytes1 code);
-error OptionPoolExist(address short, address base, uint256 expiry, bytes1 code);
+error OptionPoolExist(address short, address base, uint256 marketId, uint256 expiry, bytes1 code);
 
 function _checkDiffTokens(address token0_, address token1_) pure {
     if (token0_ == token1_) revert InvalidTokens(token0_, token1_, 0x01);
@@ -21,8 +21,9 @@ function _checkPoolNotExist(
     address callOptionPool_,
     address short_,
     address base_,
+    uint256 marketId_,
     uint256 expiryTime_
 ) pure {
     if (callOptionPool_ != address(0))
-        revert OptionPoolExist(short_, base_, expiryTime_, 0x03);
+        revert OptionPoolExist(short_, base_, marketId_, expiryTime_, 0x03);
 }

@@ -22,8 +22,9 @@ contract OptionPoolFactoryCheckMock {
         address optionPool_,
         address token1_,
         address token2_,
+        uint256 marketId_,
         uint256 expiryTime_
     ) external pure {
-        _checkPoolNotExist(optionPool_, token1_, token2_, expiryTime_);
+        _checkPoolNotExist(optionPool_, token1_, token2_, marketId_, expiryTime_);
     }
 }
